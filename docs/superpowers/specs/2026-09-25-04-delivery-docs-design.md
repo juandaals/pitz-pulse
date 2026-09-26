@@ -72,7 +72,7 @@ uvicorn :8000 ──► healthcheck GET /health ──► healthy; /health shows
 | `DUPLICATE_THRESHOLD` | 06c | 0.85 | 0.85 | no |
 | `SLACK_CHANNEL_AREAS` | 06d | — | empty | no |
 | `APP_ROOT` | 01 | package-relative | `/app` | no |
-| `LANGSMITH_TRACING` / `LANGCHAIN_TRACING_V2` | 01 | forced `false` in-process | not passed | — (never enable) |
+| `LANGSMITH_TRACING` / `LANGSMITH_TRACING_V2` / `LANGCHAIN_TRACING` / `LANGCHAIN_TRACING_V2` | 01 | forced `false` in-process | not passed | — (never enable) |
 
 Ranges and forbidden variables are defined in Spec 01 §8.2 / §8.8.
 
