@@ -1,0 +1,5 @@
+# Prompt changelog
+
+| Version | Change | Hypothesis | Eval (case) before → after | Eval (edge) before → after | Notes |
+|---|---|---|---|---|---|
+| v1 | Initial prompt: case rubric, boundary rules, requiere_info criterion, confidence anchors | Baseline | — | — | Disclosure: some boundary rules (slowness → bug, CRM/analytics syncs → data, "prefer bug when a question reveals something broken") were written with the case messages and labels in view, so case-set accuracy for v1 is optimistic; the edge set is the independent check |
