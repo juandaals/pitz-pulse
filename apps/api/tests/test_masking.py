@@ -63,6 +63,24 @@ def test_phone_next_to_protected_span_is_masked(text):
 
 
 @pytest.mark.parametrize(
+    "text,placeholder",
+    [
+        ("valor R$5511999999999", "[PHONE]"),
+        ("ligue R$ 11999998888 urgente", "[PHONE]"),
+        ("rfc gode-561231-gr8", "[RFC]"),
+        ("mi rfc es Gode-561231-gr8", "[RFC]"),
+        ("meu numero e 99998888 me liga", "[PHONE]"),
+        ("mi telefono es 12345678", "[PHONE]"),
+        ("whatsapp: 999988887", "[PHONE]"),
+    ],
+)
+def test_masks_fix_round_1_gaps(text, placeholder):
+    result = mask(text)
+    assert placeholder in result.text
+    assert not re.search(r"\d{4,}", result.text), result.text
+
+
+@pytest.mark.parametrize(
     "text",
     [
         "error 500",
@@ -80,6 +98,10 @@ def test_phone_next_to_protected_span_is_masked(text):
         "ticket INC202409001",
         "folio del 230415 com erro",
         "nota 250101 com",
+        "pedido 12345678",
+        "ticket 123456789",
+        "valor $ 1500",
+        "R$ 150",
     ],
 )
 def test_does_not_mask_protected_formats(text):

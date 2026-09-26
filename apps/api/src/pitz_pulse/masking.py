@@ -1,7 +1,8 @@
 """PII masking applied before any text leaves the process (spec 01 §8.6).
 
 Covered: email, CNPJ (numeric and 2026 alphanumeric), CPF, CURP, RFC, BR/MX phones.
-Not covered: names, addresses, CLABE/bank accounts, cards, NF-e keys, obfuscated emails.
+Not covered: names, addresses, CLABE/bank accounts, cards, NF-e keys, obfuscated emails,
+bare 8-9 digit phones without a phone keyword, lowercase space-separated RFCs.
 """
 
 import re
@@ -23,14 +24,27 @@ _CURP = re.compile(
 _RFC_COMPACT = re.compile(
     r"(?<![0-9A-Za-z])[A-ZÑ&]{3,4}(\d{6})[A-Z0-9]{3}(?![0-9A-Za-z])", re.IGNORECASE
 )
-# Uppercase only: a case-insensitive separated form would eat prose like "del 230415 com".
-_RFC_SEPARATED = re.compile(
-    r"(?<![0-9A-Za-z])[A-ZÑ&]{3,4}[\s-](\d{6})[\s-][A-Z0-9]{3}(?![0-9A-Za-z])"
+# Hyphens are an unambiguous RFC marker, so this form is case-insensitive.
+_RFC_SEPARATED_HYPHEN = re.compile(
+    r"(?<![0-9A-Za-z])[A-ZÑ&]{3,4}-(\d{6})-[A-Z0-9]{3}(?![0-9A-Za-z])", re.IGNORECASE
+)
+# Uppercase only: a case-insensitive space-separated form would eat prose like "del 230415 com".
+_RFC_SEPARATED_SPACE = re.compile(
+    r"(?<![0-9A-Za-z])[A-ZÑ&]{3,4}\s(\d{6})\s[A-Z0-9]{3}(?![0-9A-Za-z])"
 )
 # Local form first so "9999-9999 8888-8888" is two phones, not one greedy match.
 _PHONE = re.compile(
     r"(?<![\w-])\d{4,5}[-. ]\d{4}(?![\w-])"
     r"|(?<![\w+])(?:\+|\()?\d(?:[\s().-]*\d){9,13}(?!\d)"
+)
+# Bare 8-9 digit local numbers have no distinguishing shape (they collide with ticket/order
+# IDs), so they are only masked when a phone keyword precedes them. Up to 3 non-space
+# connector characters (":", "-", or a short word like "es"/"e") may sit between the keyword
+# and the digits; surrounding whitespace is unlimited.
+_PHONE_KEYWORD = re.compile(
+    r"(?<![0-9A-Za-z])(?:tel[eé]fono|telefone|tel|celular|cel|whatsapp|whats|"
+    r"n[uú]mero|fone|ligue|llame|llamar)(?![A-Za-z])\s*[^\d\s]{0,3}\s*(\d{8,9})(?!\d)",
+    re.IGNORECASE,
 )
 # Spans never masked as phones; phones are searched only in the text between them.
 _GUARDS = (
@@ -39,7 +53,11 @@ _GUARDS = (
     re.compile(r"(?<!\d)\d{4}-\d{2}-\d{2}(?!\d)"),  # ISO dates
     re.compile(r"(?<!\d)\d{1,2}[./]\d{1,2}[./]\d{2,4}(?!\d)"),  # dotted / slashed dates
     re.compile(r"(?<!\d)(?:\d{1,3}\.){3}\d{1,3}(?!\d)"),  # IPv4 / version strings
-    re.compile(r"(?:R\$|US\$|MXN|BRL|USD|\$)\s?\d[\d.,]*"),  # amounts
+    # Amounts: bounded to a plausible number so it can't swallow an adjacent phone number
+    # that happens to sit right after a currency symbol with no separating space.
+    re.compile(
+        r"(?:R\$|US\$|MXN|BRL|USD|\$)\s?(?:\d{1,3}(?:[.,]\d{3})+|\d{1,6})(?:[.,]\d{1,2})?(?!\d)"
+    ),
 )
 _SIMPLE_RULES = (("email", _EMAIL), ("cnpj", _CNPJ), ("cpf", _CPF), ("curp", _CURP))
 
@@ -67,9 +85,11 @@ def mask(text: str) -> MaskResult:
     for kind, pattern in _SIMPLE_RULES:
         current, found = pattern.subn(f"[{kind.upper()}]", current)
         _add(counts, kind, found)
-    for pattern in (_RFC_COMPACT, _RFC_SEPARATED):
+    for pattern in (_RFC_COMPACT, _RFC_SEPARATED_HYPHEN, _RFC_SEPARATED_SPACE):
         current, found = _mask_rfc(pattern, current)
         _add(counts, "rfc", found)
+    current, found = _mask_keyword_phones(current)
+    _add(counts, "phone", found)
     current, found = _mask_phones(current)
     _add(counts, "phone", found)
     return MaskResult(current, counts)
@@ -111,6 +131,18 @@ def _mask_rfc(pattern: re.Pattern[str], text: str) -> tuple[str, int]:
         return "[RFC]"
 
     return pattern.sub(replace, text), found
+
+
+def _mask_keyword_phones(text: str) -> tuple[str, int]:
+    found = 0
+
+    def replace(match: re.Match[str]) -> str:
+        nonlocal found
+        found += 1
+        kept = match.group(0)[: match.start(1) - match.start()]
+        return kept + "[PHONE]"
+
+    return _PHONE_KEYWORD.sub(replace, text), found
 
 
 def _guard_spans(text: str) -> list[tuple[int, int]]:
