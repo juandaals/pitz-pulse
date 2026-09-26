@@ -1,0 +1,120 @@
+[
+  {
+    "id": "MSG-01",
+    "categoria": "bug",
+    "prioridad": "alta",
+    "area_sugerida": "backend",
+    "idioma": "es",
+    "requiere_info": true,
+    "label_status": "approved",
+    "justificacion": "Customer-facing 500 with a campaign on Monday; cannot reproduce without the seller and the uploaded file."
+  },
+  {
+    "id": "MSG-02",
+    "categoria": "datos",
+    "prioridad": "media",
+    "area_sugerida": "data",
+    "idioma": "pt",
+    "requiere_info": false,
+    "label_status": "approved",
+    "justificacion": "Month-end close touches money, but it is an internal extraction with days of lead time and a complete spec; alta only if the close were legally blocking."
+  },
+  {
+    "id": "MSG-03",
+    "categoria": "acceso",
+    "prioridad": "media",
+    "area_sugerida": "devops",
+    "idioma": "es",
+    "requiere_info": true,
+    "label_status": "approved",
+    "justificacion": "Blocks one internal person, no customer impact; needs identity, role and approver. Access provisioning assigned to devops (backend also plausible)."
+  },
+  {
+    "id": "MSG-04",
+    "categoria": "automatizacion",
+    "prioridad": "media",
+    "area_sugerida": "digital_transformation",
+    "idioma": "pt",
+    "requiere_info": false,
+    "label_status": "approved",
+    "justificacion": "About 10 hours per week of manual work with a working manual alternative, so media rather than baja; details are gathered in discovery."
+  },
+  {
+    "id": "MSG-05",
+    "categoria": "bug",
+    "prioridad": "media",
+    "area_sugerida": "data",
+    "idioma": "es",
+    "requiere_info": true,
+    "label_status": "approved",
+    "justificacion": "Treated as a possible HubSpot sync failure rather than a data request; needs the campaign and which records are missing."
+  },
+  {
+    "id": "MSG-06",
+    "categoria": "bug",
+    "prioridad": "alta",
+    "area_sugerida": "frontend",
+    "idioma": "pt",
+    "requiere_info": true,
+    "label_status": "approved",
+    "justificacion": "Desktop works as a workaround, but it blocks customer purchases on mobile, the mechanics' main channel; needs device, browser and coupon."
+  },
+  {
+    "id": "MSG-07",
+    "categoria": "datos",
+    "prioridad": "baja",
+    "area_sugerida": "data",
+    "idioma": "es",
+    "requiere_info": false,
+    "label_status": "approved",
+    "justificacion": "Data question for a meeting with no immediate impact; answerable with the standard definition of an active workshop."
+  },
+  {
+    "id": "MSG-08",
+    "categoria": "bug",
+    "prioridad": "alta",
+    "area_sugerida": "backend",
+    "idioma": "pt",
+    "requiere_info": false,
+    "label_status": "approved"
+  },
+  {
+    "id": "MSG-09",
+    "categoria": "bug",
+    "prioridad": "media",
+    "area_sugerida": "devops",
+    "idioma": "es",
+    "requiere_info": true,
+    "label_status": "approved",
+    "justificacion": "Too vague to size (which part, since when, for whom); media until the scope is confirmed."
+  },
+  {
+    "id": "MSG-10",
+    "categoria": "automatizacion",
+    "prioridad": "baja",
+    "area_sugerida": "digital_transformation",
+    "idioma": "es",
+    "requiere_info": true,
+    "label_status": "approved",
+    "justificacion": "Nice-to-have; the channel (Slack or email) and the source of hire dates are unknown."
+  },
+  {
+    "id": "MSG-11",
+    "categoria": "consulta",
+    "prioridad": "baja",
+    "area_sugerida": "producto",
+    "idioma": "pt",
+    "requiere_info": false,
+    "label_status": "approved"
+  },
+  {
+    "id": "MSG-12",
+    "categoria": "bug",
+    "prioridad": "alta",
+    "area_sugerida": "backend",
+    "idioma": "es",
+    "requiere_info": true,
+    "label_status": "approved",
+    "justificacion": "Asks how to process a refund (consulta), but three double charges in a month point to a payments bug with customer money at stake; needs order ids and payment method."
+  }
+]
