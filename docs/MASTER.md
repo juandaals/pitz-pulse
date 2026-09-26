@@ -102,7 +102,7 @@ pitz-pulse/
 
 | # | Spec | Covers | File | Plan | Status |
 |---|------|--------|------|------|--------|
-| 01 | Classification core | Part 1 | `specs/2026-09-25-01-classification-core-design.md` | pending | draft rev 3 (spec gate reviewed) |
+| 01 | Classification core | Part 1 | `specs/2026-09-25-01-classification-core-design.md` | pending | implemented on `feat/spec-01-classification-core`; real smoke calls pending credentials |
 | 02 | Service & persistence | Part 2 | `specs/2026-09-25-02-service-persistence-design.md` | pending | draft rev 2 |
 | 03 | Evaluation, golden sets, iteration | Part 3 | `specs/2026-09-25-03-evaluation-design.md` | pending | draft rev 2 |
 | 04 | 04a delivery · 04b docs | Part 2 (compose) + Part 4 | `specs/2026-09-25-04-delivery-docs-design.md` | pending | draft rev 2 |
@@ -193,6 +193,8 @@ show real output → propose commit(s) → candidate approves.
 | D24 | Agent SDK adapter uses `claude-agent-sdk` directly (no LangChain wrapper), plain-JSON reply validated by the graph, full isolation options, explicit subprocess env, hard deadline, concurrency semaphore | The SDK has no forced tool choice and `output_format` hides a retry loop (conflicts with D4); wrappers lack isolation options | approved |
 | D25 | Provider unset + exactly one credential → that provider (logged); mock responses carry `X-Pitz-Provider: mock` | Evaluators who only set their key must not silently get mock output | approved |
 | D26 | Run stems include the golden set; no overwrite without `FORCE`; meta carries prompt/input/results hashes; `eval/runs/` committed after every real run | Evidence for the README iteration story cannot be silently destroyed or mismatched | approved |
+| D4a | Amendment to D4: the Anthropic adapter owns all of its transport retries itself (`ChatAnthropic(max_retries=0)`), capping every `retry-after` wait at 30 s; the per-invoke hard deadline is `LLM_TIMEOUT_SECONDS × (1 + LLM_MAX_RETRIES) + LLM_MAX_RETRIES × 30 + 10` (220 s with defaults) | The underlying SDK would otherwise honor an unbounded server `retry-after`, which could blow any deadline; only an adapter-owned retry loop can cap it (G33) | approved |
+| D27 | Execution rulings confirmed while implementing Spec 01 (this phase): tracing is disabled with the four LangSmith/LangChain env vars plus `langsmith.utils.get_env_var.cache_clear()` and `tracing_context(enabled=False)` around every graph run — `run_trees.configure(enabled=False)` is deliberately not used because it leaks process-global state; masking guards are bounded to plausible amounts/dates and the separated-RFC and bare-phone rules are keyword/case gated as documented in Spec 01 §8.6; `ClaudeAgentSdkAdapter` rejects at construction any config whose deadline cannot fit one attempt plus SDK cleanup; batch uses a sliding concurrency window that stops submitting after the first `llm_rejected` and records never-submitted items as `cancelled` | Verified while implementing and testing Spec 01; specs and this document are updated to match rather than left describing intent that diverged from the shipped behavior | approved |
 
 ## 8. Gaps, edge cases and contradictions register
 

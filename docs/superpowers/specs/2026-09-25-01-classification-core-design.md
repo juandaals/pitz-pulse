@@ -32,11 +32,15 @@ Out of scope: HTTP, persistence (Spec 02), evaluation and promotion (Spec 03).
 | `version_prompt` | str | code (prompt file stem, D15) |
 
 `pregunta_seguimiento = null` when `requiere_info = false` is our stricter reading of the case
-(documented in README assumptions). All models use `ConfigDict(extra="forbid", strict=True)`;
-validators are `mode="after"` and never echo values in their messages ("has 23 words", not the text).
+(documented in README assumptions). All models use `ConfigDict(extra="forbid")`, with `strict=True`
+applied field-by-field to the non-enum fields (`StrictStr`, `StrictBool`, the `Confidence` float) —
+model-level `strict=True` would reject the enum fields' plain string values coming back from the
+tool call JSON; validators are `mode="after"` and never echo values in their messages ("has 23
+words", not the text).
 
 Request input (D11): `id` `^[A-Za-z0-9_-]{1,64}$`; `message` 1–4000 chars after strip (the stored
-and hashed value is the original, unstripped); `source_area` optional, 1–100 chars.
+and hashed value is the original, unstripped) and ≤ 8000 raw chars before stripping; `source_area`
+optional, 1–100 chars.
 
 `schema.py` exposes `ClassificationShape` (types, enums, extra=forbid, no rule validators) —
 Spec 03 validates run files structurally with it — and `Classification(ClassificationShape)` with
@@ -167,17 +171,24 @@ make classify SET=case|edge [SUFFIX=x] [FORCE=1]
   │ (^[a-z0-9-]{1,20}$) ─► exit 2 before any LLM call (errors show id + field, never text)
   │ target run exists and not FORCE ─► exit 2
   ▼
-ThreadPoolExecutor(max_workers=LLM_CONCURRENCY)
-  │ per future: ClassifyOutcome, or ClassificationError(kind), or unexpected Exception → kind "unexpected"
-  │ first llm_rejected ─► cancel pending futures (bad credential / request: stop spending)
-  │ Ctrl-C ─► shutdown(cancel_futures=True), exit 130, nothing written
+ThreadPoolExecutor(max_workers=LLM_CONCURRENCY), sliding window: at most LLM_CONCURRENCY futures
+in flight; the next request is submitted only once a slot frees up
+  │ per future: ClassifyOutcome, or ClassificationError(kind), or unexpected Exception → kind
+  │ "unexpected"
+  │ first llm_rejected ─► stop submitting new items (bad credential / request: stop spending);
+  │   futures already in flight run to completion and are recorded normally; requests never
+  │   submitted are recorded as failures with kind "cancelled"
+  │ Ctrl-C ─► shutdown(wait=False, cancel_futures=True), exit 130, nothing written, in-flight
+  │   calls abandoned (may still be billed)
   ▼
 results sorted by id; failures listed (id, kind)
   ▼
 runs.write_pair(run_items, meta): meta written first (with results_sha256), then run; both via
 unique temp file in the same dir + fsync + os.replace
   ▼
-exit 0 if no failures, else exit 1 (files still written so paid evidence is kept; promote refuses)
+exit 0 if no failures; exit 1 if some items failed (files still written so paid evidence is kept;
+promote refuses); exit 1 with nothing written when there are no successful outcomes and every
+failure is `llm_rejected` or `cancelled` (the whole run was rejected)
 ```
 
 **Stem:** `<set>__<prompt>__<provider>__<model>[__<suffix>]` (D26); model id sanitized to
@@ -188,13 +199,14 @@ Runs are committed after every real run (D26). The batch never writes `resultado
 
 **Meta (`<stem>.meta.json`):** `set, input_file (repo-relative), input_sha256, provider, model,
 billing, prompt_version, prompt_sha256, temperature (number | null), invalid_output_retries,
-llm_max_retries, timeout_s, concurrency, n, failures: [{id, kind}], results_sha256,
-total_input_tokens, total_output_tokens, total_cost_usd, total_equivalent_api_cost_usd,
-attempts_total, invalid_output_retries_used, p50_latency_ms_per_message, run_at (UTC ISO-8601 Z)`.
+llm_max_retries, timeout_s, concurrency, n, n_input (count of parsed input items, including any
+never classified), failures: [{id, kind}], results_sha256, total_input_tokens, total_output_tokens,
+total_cost_usd, total_equivalent_api_cost_usd, attempts_total, invalid_output_attempts,
+transport_retries_total, p50_latency_ms_per_message, run_at (UTC ISO-8601 Z)`.
 Totals sum **every attempt**, including failed ones.
 
 `make classify` prints provider, model, temperature and the worst-case call count
-`n × (1 + INVALID_OUTPUT_RETRIES)` (plus hidden SDK transport retries) before a paid run.
+`n × (1 + INVALID_OUTPUT_RETRIES) × (1 + LLM_MAX_RETRIES)` before a paid run.
 
 ## 7. State diagram — one classification
 
@@ -230,9 +242,11 @@ START ───►│  masked  │
   `minLength`, `maxLength`, `pattern`, `default`, `title`), moving each constraint into the field's
   `description`. Every field has a description stating its rule (e.g. `resumen`: "Spanish, at most
   20 words"). Pydantic enforces everything again (G23).
-- `AnthropicApiAdapter`: `ChatAnthropic(model, api_key=…, base_url=default, temperature?, max_retries,
-  timeout, max_tokens=1024).bind_tools([tool], tool_choice="record_classification",
-  strict=caps.supports_strict)`. Reads `tool_calls` (empty → `tool_input=None`, never `IndexError`;
+- `AnthropicApiAdapter`: `ChatAnthropic(model, api_key=…, base_url=default, temperature?,
+  max_retries=0, timeout, max_tokens=1024).bind_tools([tool], tool_choice="record_classification")`;
+  `strict` is set inside the tool dict itself (`tool["strict"] = True` when `caps.supports_strict`),
+  not passed to `bind_tools`, because `langchain-anthropic` ignores `bind_tools(strict=...)` for
+  dict-shaped tools. Reads `tool_calls` (empty → `tool_input=None`, never `IndexError`;
   `invalid_tool_calls` → `None`), `usage_metadata`, `response_metadata["stop_reason"]`. Exact
   LangChain signatures verified with current docs in the plan.
 - `ClaudeAgentSdkAdapter`: the Agent SDK has no forced tool choice and its `output_format` runs a
@@ -257,8 +271,11 @@ Selection (`config.py`):
 - Unset and no credential → `mock`, logged at WARNING. Unset and both credentials → startup error.
 - Selected provider's credential missing → startup error. The non-selected credential must be empty
   (startup error otherwise), so the wrong account is never billed silently.
-- `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_BASE_URL`, `CLAUDE_CODE_USE_BEDROCK`, `CLAUDE_CODE_USE_VERTEX`
-  set → startup error (they would redirect auth or backend).
+- `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_BASE_URL`, `ANTHROPIC_API_URL`, `ANTHROPIC_LOG`,
+  `ANTHROPIC_CUSTOM_HEADERS`, `ANTHROPIC_UNIX_SOCKET`, `CLAUDE_CODE_USE_BEDROCK`,
+  `CLAUDE_CODE_USE_VERTEX`, `CLAUDE_CODE_USE_FOUNDRY`, `CLAUDE_CODE_USE_ANTHROPIC_AWS`,
+  `CLAUDE_CODE_USE_ANTHROPIC_GOOGLE_CLOUD`, `CLAUDE_CODE_EXTRA_BODY`, `CLAUDE_CODE_HOST_CREDS_FILE`
+  set → startup error (each would redirect provider auth, backend, headers, body or logging).
 - Credential values are stripped; values starting/ending with a quote → startup error.
 - In mock mode every API response carries `X-Pitz-Provider: mock` (Spec 02).
 
@@ -267,19 +284,29 @@ transport making one model turn per `invoke`. Options, all asserted by a test:
 `tools=[]`, `allowed_tools=[]`, `mcp_servers={}`, `strict_mcp_config=True`, `setting_sources=[]`,
 `skills=[]`, `plugins=[]`, `agents=None`, `hooks=None`, `max_turns=1`, fixed non-interactive
 `permission_mode`, explicit `system_prompt`, `model=<configured>`, `cwd=<fresh empty temp dir>`,
-session persistence disabled, and an explicit `env` containing only: `CLAUDE_CODE_OAUTH_TOKEN`,
-`API_TIMEOUT_MS` / `CLAUDE_CODE_MAX_RETRIES` derived from settings, a writable `HOME` /
-`CLAUDE_CONFIG_DIR` temp dir, nonessential traffic/telemetry disabled, and `PATH`. No inherited
-`ANTHROPIC_*`, `API_KEY`, `SLACK_*`. The plan's first task verifies the exact option and env names
-against the installed SDK and confirms `max_turns=1` completes with a plain-JSON reply (stubbed
-stream first, then one announced real call). A process-wide semaphore sized `LLM_CONCURRENCY` bounds
-concurrent CLI subprocesses (batch and API). Startup readiness: CLI resolvable, `HOME` writable.
-`AssistantMessage.model` differing from the configured model is logged as a warning and recorded.
+`verbatim_prompts=True`, `thinking={"type": "disabled"}`, `extra_args={"no-session-persistence":
+None}`, and an explicit `env`: every inherited variable is blanked except `PATH`, `TMPDIR`, `LANG`,
+`LC_ALL`, plus `CLAUDE_CODE_OAUTH_TOKEN`, `API_TIMEOUT_MS` / `CLAUDE_CODE_MAX_RETRIES` derived from
+settings, a writable `HOME` / `CLAUDE_CONFIG_DIR` temp dir, and nonessential traffic/telemetry
+disabled. No inherited `ANTHROPIC_*`, `API_KEY`, `SLACK_*`. The plan's first task verifies the exact
+option and env names against the installed SDK and confirms `max_turns=1` completes with a
+plain-JSON reply (stubbed stream first, then one announced real call). A process-wide semaphore
+sized `LLM_CONCURRENCY` bounds concurrent CLI subprocesses (batch and API); it is acquired with a
+timeout bounded by the call's remaining deadline, never blocking past it. Startup readiness: CLI
+resolvable and executable, `HOME` writable, and one `claude -v` subprocess version check inside
+`check_ready` (called once at startup); once it passes, `CLAUDE_AGENT_SDK_SKIP_VERSION_CHECK=1` is
+set so the SDK itself does not repeat that check on every call. `AssistantMessage.model` differing
+from the configured model is logged as a warning and recorded. At construction, `ClaudeAgentSdkAdapter`
+rejects (`ConfigError`) any settings whose `deadline_s` leaves less than a 15 s cleanup margin plus
+one full `LLM_TIMEOUT_SECONDS` attempt (the SDK's shielded transport close can itself take up to
+that margin).
 
 Agent SDK error mapping: `authentication_failed`, `billing_error`, `invalid_request`,
 `CLINotFoundError` → rejected; `rate_limit`, `server_error`, `api_error_status` 429 / ≥ 500,
-`CLIConnectionError`, deadline exceeded → unavailable; `error_max_turns` or no parsable JSON →
-`tool_input=None` (invalid output). `error_type` is always the class/literal name, never `str(exc)`.
+`CLIConnectionError`, deadline exceeded → unavailable; a `ResultError` whose subtype is not
+`error_max_turns` → unavailable (subtype recorded as `error_type`); `error_max_turns` or no parsable
+JSON → `tool_input=None` (invalid output). `error_type` is always the class/literal name, never
+`str(exc)`.
 
 Cost: `api` → tokens × catalog price; `subscription` → `cost_usd=0` and `equivalent_api_cost_usd`
 computed from tokens × the API price of the same model.
@@ -336,15 +363,20 @@ Digit rules use digit lookarounds `(?<!\d)…(?!\d)`, not `\b`.
 | 2 | CNPJ | `NN.NNN.NNN/NNNN-NN` with each separator optional (incl. `12345678/0001-90`), 14 bare digits, 2026 alphanumeric format formatted or bare, case-insensitive | `[CNPJ]` |
 | 3 | CPF | `NNN.NNN.NNN-NN` | `[CPF]` |
 | 4 | CURP | `[A-Z]{4}\d{6}[HMX][A-Z]{5}[A-Z0-9]\d`, case-insensitive | `[CURP]` |
-| 5 | RFC | `[A-ZÑ&]{3,4}[\s-]?\d{6}[\s-]?[A-Z0-9]{3}` whose 6 digits are a valid YYMMDD date, case-insensitive | `[RFC]` |
-| 6 | phone | optional `+`, 10–13 digits with runs of space/`-`/`.`/`()`/dashes between groups; local `NNNN[- ]NNNN`, `NNNNN[- ]NNNN` | `[PHONE]` |
+| 5 | RFC | compact `[A-ZÑ&]{3,4}\d{6}[A-Z0-9]{3}` (case-insensitive); separated `[A-ZÑ&]{3,4}[-\s]\d{6}[-\s][A-Z0-9]{3}` with the hyphen form case-insensitive and the space form uppercase-only (a case-insensitive space form would eat ordinary prose like "del 230415 com"); all forms require the 6 digits to be a valid YYMMDD date | `[RFC]` |
+| 6 | phone | optional `+`/`(`, 10–14 digits total with runs of space/`-`/`.`/`()` between groups, matched only in the text outside guard spans; local `NNNN[- ]NNNN`, `NNNNN[- ]NNNN`; bare 8–9 digit numbers only when immediately preceded (within up to 3 connector characters) by a phone keyword — `tel`, `teléfono`/`telefono`, `telefone`, `cel`, `celular`, `whats`, `whatsapp`, `número`/`numero`, `fone`, `ligue`, `llame`, `llamar` | `[PHONE]` |
 
-Guards: `YYYY-YYYY` year ranges, ISO/dotted dates and date ranges, IPv4 addresses, and amounts
-preceded by a currency sign are never masked as phones.
-Accepted over-masking (documented): bare 11-digit sequences (CPF or phone → `[PHONE]`), 10–13-digit
-IDs/timestamps not covered by a guard.
+Guards (spans the phone rule never searches inside): year lists/ranges (e.g. `2024-2025`,
+`2024, 2025 2026`), year-month (e.g. `2024-09`), ISO/dotted/slashed dates and date ranges, IPv4
+addresses, and amounts after a currency sign — bounded to a plausible number
+(`\d{1,3}(?:[.,]\d{3})+` or `\d{1,6}`, optional 1–2 decimal digits, not followed by another digit)
+so it cannot swallow an adjacent phone number sitting right after the currency symbol.
+Accepted over-masking (documented): bare 11-digit sequences (CPF or phone → `[PHONE]`), 10–14-digit
+IDs/timestamps not covered by a guard, and 14-character alphanumeric codes ending in two digits that
+match the CNPJ shape but are not real CNPJs (`[CNPJ]`).
 Not covered (documented): names, addresses, CLABE/bank accounts, card numbers, NF-e access keys,
-obfuscated emails ("arroba"), secrets, attachments.
+obfuscated emails ("arroba"), secrets, attachments, bare 8–9 digit phones with no phone keyword
+nearby, lowercase space-separated RFCs.
 Synthetic PII in fixtures uses invalid check digits, `example.com` domains and repeated-digit phones.
 
 ### 8.7 Mock mode
@@ -357,11 +389,19 @@ item is `needs_review` — documented), tokens 0, `model="mock"`, `billing="none
 `LLM_MAX_RETRIES` (3, 0–5), `INVALID_OUTPUT_RETRIES` (1, 0–3), `LLM_CONCURRENCY` (4, 1–16),
 `CONFIDENCE_THRESHOLD` (0.7, 0–1), `LOG_LEVEL` (`INFO`), credentials (§8.2), `APP_ROOT`
 (package-relative default for `prompts/`, `migrations/`, `eval/`; never the cwd).
-- Per-invoke hard deadline `deadline_s = LLM_TIMEOUT_SECONDS × (1 + LLM_MAX_RETRIES) + 30` enforced
-  by each adapter (the Anthropic adapter also caps `retry-after` waits at 30 s); Spec 02 derives its
-  stale window from it (G33).
-- Tracing forced off: `LANGSMITH_TRACING`, `LANGCHAIN_TRACING_V2` set to `false` in-process at
-  startup; if a LangSmith API key is present a WARNING says tracing is disabled (G31).
+- Per-invoke hard deadline `deadline_s = LLM_TIMEOUT_SECONDS × (1 + LLM_MAX_RETRIES) +
+  LLM_MAX_RETRIES × 30 + 10` (220 s with defaults) enforced by each adapter — the Anthropic adapter
+  owns all of its transport retries itself (`ChatAnthropic(max_retries=0)`) and caps each
+  `retry-after` wait at 30 s so an unbounded server-provided wait can never blow the deadline
+  (D4 amendment); Spec 02 derives its stale window from it (G33).
+- Tracing forced off: all four LangSmith/LangChain tracing env vars (`LANGSMITH_TRACING`,
+  `LANGSMITH_TRACING_V2`, `LANGCHAIN_TRACING`, `LANGCHAIN_TRACING_V2`) are set to `false` in-process
+  at startup and `langsmith.utils.get_env_var.cache_clear()` is called so any value LangSmith had
+  already cached is invalidated; every graph run is additionally wrapped in
+  `langsmith.tracing_context(enabled=False)`. `run_trees.configure(enabled=False)` is deliberately
+  **not** used: it sets a process-global context var with no way back to "unset", which would leak
+  its effect into unrelated code running afterwards (verified). If a LangSmith API key is present a
+  WARNING says tracing is disabled (G31).
 - Empty string = unset, except `LLM_TEMPERATURE` (§8.4).
 - `evaluate`/`promote` read only what they need (`CONFIDENCE_THRESHOLD`, `PROMPT_VERSION`) and never
   validate providers or credentials.

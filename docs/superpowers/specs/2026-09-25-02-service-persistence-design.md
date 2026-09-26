@@ -163,11 +163,11 @@ classifier.classify(req) → ClassifyOutcome   (outside any transaction: no DB l
                            (response detail is a constant; logs carry the class name only)
 ```
 
-`PENDING_STALE_SECONDS` default 420; at startup it must be ≥
+`PENDING_STALE_SECONDS` default 540; at startup it must be ≥
 `(1 + INVALID_OUTPUT_RETRIES) × deadline_s + 60`, where `deadline_s` is Spec 01's hard per-invoke
-deadline (`LLM_TIMEOUT_SECONDS × (1 + LLM_MAX_RETRIES) + 30`; 150 s with defaults → minimum 360 s),
-else startup error. Because every adapter enforces that deadline, a live worker can never be
-re-claimed; the claim-token guard additionally makes any late worker a no-op.
+deadline (`LLM_TIMEOUT_SECONDS × (1 + LLM_MAX_RETRIES) + LLM_MAX_RETRIES × 30 + 10`; 220 s with
+defaults → minimum 500 s), else startup error. Because every adapter enforces that deadline, a live
+worker can never be re-claimed; the claim-token guard additionally makes any late worker a no-op.
 
 ## 7. Flow — PATCH correction
 
