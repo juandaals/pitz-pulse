@@ -14,7 +14,7 @@ from claude_agent_sdk import (
     TextBlock,
 )
 
-from pitz_pulse.config import parse_llm_settings
+from pitz_pulse.config import ConfigError, parse_llm_settings
 from pitz_pulse.providers import claude_agent_sdk as module
 from pitz_pulse.providers.base import LLMError
 from pitz_pulse.providers.claude_agent_sdk import ClaudeAgentSdkAdapter, parse_json_object
@@ -76,6 +76,15 @@ def stub_query(messages=(), raises=None):
 
 def invoke(adapter, deadline=30):
     return adapter.invoke("system", "user", {"name": "t"}, deadline)
+
+
+def test_legal_minimum_deadline_cannot_fit_one_attempt_plus_cleanup_is_rejected():
+    with pytest.raises(ConfigError, match="LLM_TIMEOUT_SECONDS"):
+        ClaudeAgentSdkAdapter(settings(LLM_TIMEOUT_SECONDS="5", LLM_MAX_RETRIES="0"))
+
+
+def test_default_settings_leave_room_for_one_attempt_plus_cleanup():
+    ClaudeAgentSdkAdapter(settings())  # does not raise
 
 
 def test_isolation_options():

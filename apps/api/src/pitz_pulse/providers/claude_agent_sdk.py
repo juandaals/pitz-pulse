@@ -64,6 +64,11 @@ class ClaudeAgentSdkAdapter:
     provider = CLAUDE_AGENT_SDK
 
     def __init__(self, settings: LLMSettings, query_fn=query):
+        if settings.deadline_s < _CLEANUP_MARGIN_S + settings.timeout_s:
+            raise ConfigError(
+                "LLM_TIMEOUT_SECONDS and LLM_MAX_RETRIES leave no room for one full attempt "
+                "plus SDK cleanup; raise LLM_TIMEOUT_SECONDS or LLM_MAX_RETRIES"
+            )
         self.model = settings.model
         self.caps = settings.caps
         self._settings = settings
