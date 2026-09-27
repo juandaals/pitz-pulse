@@ -1,0 +1,40 @@
+services:
+  api:
+    build:
+      context: ./apps/api
+    environment:
+      # Unset stays unset so auto-selection (mock vs. a real provider) can run (Spec 01 §8.2).
+      LLM_PROVIDER: ${LLM_PROVIDER-}
+      LLM_MODEL: ${LLM_MODEL:-claude-haiku-4-5}
+      # Unset stays "0" (Spec 01 §8.4); "none" must survive untouched to omit temperature.
+      LLM_TEMPERATURE: ${LLM_TEMPERATURE-0}
+      PROMPT_VERSION: ${PROMPT_VERSION:-v1}
+      LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-30}
+      LLM_MAX_RETRIES: ${LLM_MAX_RETRIES:-3}
+      INVALID_OUTPUT_RETRIES: ${INVALID_OUTPUT_RETRIES:-1}
+      LLM_CONCURRENCY: ${LLM_CONCURRENCY:-4}
+      CONFIDENCE_THRESHOLD: ${CONFIDENCE_THRESHOLD:-0.7}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      CLAUDE_CODE_OAUTH_TOKEN: ${CLAUDE_CODE_OAUTH_TOKEN:-}
+      API_KEY: ${API_KEY:-dev-local-key}
+      DB_PATH: /data/pitz_pulse.db
+      PENDING_STALE_SECONDS: ${PENDING_STALE_SECONDS:-}
+      APP_ROOT: /app
+    ports:
+      - "${API_PORT:-8000}:8000"
+    volumes:
+      - pitz-data:/data
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).status==200 else 1)
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+volumes:
+  pitz-data:
