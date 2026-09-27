@@ -5,13 +5,26 @@ for `.env.example` and a `NAME:` regex scoped to the `environment:` block of `do
 """
 
 import re
+import shutil
+import subprocess
 from pathlib import Path
 
-from pitz_pulse.config import ACTIVE_PROMPT_VERSION
+import pytest
+
+from pitz_pulse.config import ACTIVE_PROMPT_VERSION, parse_llm_settings
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 ENV_EXAMPLE = REPO_ROOT / ".env.example"
 COMPOSE_FILE = REPO_ROOT / "docker-compose.yml"
+MAKE = shutil.which("make")
+
+# Secrets that must stay empty in the committed .env.example (Spec 04 delivery path).
+SECRET_VARS = (
+    "ANTHROPIC_API_KEY",
+    "CLAUDE_CODE_OAUTH_TOKEN",
+    "SLACK_SIGNING_SECRET",
+    "SLACK_BOT_TOKEN",
+)
 
 # Spec 04 §3 inventory, minus the LangSmith/LangChain tracing variables (never enabled; checked
 # separately below).
@@ -102,8 +115,8 @@ def test_prompt_version_matches_code_default_in_both_files():
 
 def test_env_example_secrets_are_empty():
     env_vars = _parse_env_example()
-    assert env_vars["ANTHROPIC_API_KEY"] == ""
-    assert env_vars["CLAUDE_CODE_OAUTH_TOKEN"] == ""
+    for name in SECRET_VARS:
+        assert env_vars[name] == "", name
 
 
 def test_no_tracing_variable_is_enabled():
@@ -112,3 +125,66 @@ def test_no_tracing_variable_is_enabled():
     for name in TRACING_VARS:
         assert env_vars.get(name, "").lower() != "true", f"{name} must never be true"
         assert compose_vars.get(name, "").lower() != "true", f"{name} must never be true"
+
+
+def test_compose_delivery_path_passthrough_values_are_exact():
+    """Each of these uses a specific shell-parameter operator (`-` vs `:-`) so an explicit empty
+    value behaves differently from unset (Spec 01 §8.2/8.4); pin the exact text so a future edit
+    can't silently swap one for the other.
+    """
+    compose_vars = _parse_compose_environment()
+    assert compose_vars["LLM_PROVIDER"] == "${LLM_PROVIDER-}"
+    assert compose_vars["LLM_TEMPERATURE"] == "${LLM_TEMPERATURE-0}"
+    assert compose_vars["ANTHROPIC_API_KEY"] == "${ANTHROPIC_API_KEY:-}"
+    assert compose_vars["CLAUDE_CODE_OAUTH_TOKEN"] == "${CLAUDE_CODE_OAUTH_TOKEN:-}"
+    assert compose_vars["API_KEY"] == "${API_KEY:-dev-local-key}"
+
+
+def test_compose_environment_block_is_not_empty():
+    compose_vars = _parse_compose_environment()
+    assert len(compose_vars) >= 10, compose_vars
+
+
+def test_env_example_temperature_is_zero_or_none():
+    env_vars = _parse_env_example()
+    assert env_vars["LLM_TEMPERATURE"] in {"0", "none"}
+
+
+def test_env_example_values_pass_parse_llm_settings_with_a_dummy_key():
+    """Catches an empty/invalid value that would fail fast in a real clone (`cp .env.example .env`
+    then fill in a credential): only ANTHROPIC_API_KEY is supplied, since it's the one value a
+    developer is expected to add themselves.
+    """
+    env_vars = _parse_env_example()
+    env_vars["ANTHROPIC_API_KEY"] = "sk-ant-api-test-dummy"  # nosec: not a real credential
+    settings = parse_llm_settings(env_vars)
+    assert settings.provider == "anthropic_api"
+    assert settings.temperature == 0.0
+
+
+@pytest.mark.skipif(MAKE is None, reason="make is not installed")
+def test_classify_dry_run_force_needs_the_literal_1():
+    def dry_run(force_value: str) -> str:
+        result = subprocess.run(
+            ["make", "-n", "classify", "SET=case", f"FORCE={force_value}"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return result.stdout
+
+    assert "--force" not in dry_run("0")
+    assert "--force" in dry_run("1")
+
+
+@pytest.mark.skipif(MAKE is None, reason="make is not installed")
+def test_promote_dry_run_allow_mock_needs_the_literal_1():
+    result = subprocess.run(
+        ["make", "-n", "promote", "RUN=x", "ALLOW_MOCK=0"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert "--allow-mock" not in result.stdout
