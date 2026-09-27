@@ -48,10 +48,10 @@ def test_evaluate_case_mock_run_exits_zero_with_mock_header(capsys):
     assert out.out.splitlines()[0] == evaluate.MOCK_HEADER
 
 
-def test_evaluate_edge_mock_run_exits_zero_with_zero_scored(capsys):
+def test_evaluate_edge_mock_run_scores_every_approved_label(capsys):
     code = evaluate.main(["--run", "edge__v1__mock__mock"], env={"APP_ROOT": str(APP_ROOT)})
 
     out = capsys.readouterr()
     assert code == 0, out.err
     assert out.out.splitlines()[0] == evaluate.MOCK_HEADER
-    assert "0 scored" in out.out
+    assert "· 18 scored" in out.out  # all edge labels approved by the candidate

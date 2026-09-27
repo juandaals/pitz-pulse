@@ -6,7 +6,7 @@
     "area_sugerida": "devops",
     "idioma": "es",
     "requiere_info": false,
-    "label_status": "draft",
+    "label_status": "approved",
     "justificacion": "PII (email, phone) must be masked; a locked supplier-portal account blocks an operation (v1 rubric: alta)"
   },
   {
@@ -16,7 +16,7 @@
     "area_sugerida": "backend",
     "idioma": "pt",
     "requiere_info": false,
-    "label_status": "draft",
+    "label_status": "approved",
     "justificacion": "Customer charged twice (money impact); CPF must be masked"
   },
   {
@@ -26,7 +26,7 @@
     "area_sugerida": "producto",
     "idioma": "es",
     "requiere_info": false,
-    "label_status": "draft",
+    "label_status": "approved",
     "justificacion": "Process question; RFC/CURP must be masked"
   },
   {
@@ -36,7 +36,7 @@
     "area_sugerida": "frontend",
     "idioma": "es",
     "requiere_info": false,
-    "label_status": "draft",
+    "label_status": "approved",
     "justificacion": "Prompt injection must be ignored; broken export button"
   },
   {
@@ -46,7 +46,7 @@
     "area_sugerida": "data",
     "idioma": "pt",
     "requiere_info": false,
-    "label_status": "draft",
+    "label_status": "approved",
     "justificacion": "Mixed ES/PT (≈12 PT vs 9 ES words); a failing report delivery is a broken integration (v1 rubric, MSG-05 precedent: bug/data)"
   },
   {
@@ -56,7 +56,7 @@
     "area_sugerida": "producto",
     "idioma": "es",
     "requiere_info": true,
-    "label_status": "draft",
+    "label_status": "approved",
     "justificacion": "No symptom at all (unlike MSG-09, which names slowness); a follow-up question is required"
   },
   {
@@ -66,7 +66,7 @@
     "area_sugerida": "backend",
     "idioma": "es",
     "requiere_info": false,
-    "label_status": "draft",
+    "label_status": "approved",
     "justificacion": "Two requests; the money-impacting one (commissions at zero) decides"
   },
   {
@@ -76,7 +76,7 @@
     "area_sugerida": "digital_transformation",
     "idioma": "es",
     "requiere_info": false,
-    "label_status": "draft",
+    "label_status": "approved",
     "justificacion": "Long message; explicitly \"not broken\", repetitive manual reconciliation"
   },
   {
@@ -86,7 +86,7 @@
     "area_sugerida": "producto",
     "idioma": "pt",
     "requiere_info": false,
-    "label_status": "draft",
+    "label_status": "approved",
     "justificacion": "Urgency markup without real impact"
   },
   {
@@ -96,7 +96,7 @@
     "area_sugerida": "frontend",
     "idioma": "es",
     "requiere_info": false,
-    "label_status": "draft",
+    "label_status": "approved",
     "justificacion": "Urgency words without real impact; cosmetic change request"
   },
   {
@@ -106,7 +106,7 @@
     "area_sugerida": "backend",
     "idioma": "pt",
     "requiere_info": false,
-    "label_status": "draft",
+    "label_status": "approved",
     "justificacion": "Real impact (orders lost) without urgency words"
   },
   {
@@ -116,7 +116,7 @@
     "area_sugerida": "data",
     "idioma": "es",
     "requiere_info": false,
-    "label_status": "draft",
+    "label_status": "approved",
     "justificacion": "Data question for a meeting, no immediate impact (MSG-07 precedent; urgency wording alone does not raise priority)"
   },
   {
@@ -126,7 +126,7 @@
     "area_sugerida": "digital_transformation",
     "idioma": "pt",
     "requiere_info": false,
-    "label_status": "draft",
+    "label_status": "approved",
     "justificacion": "Manual weekly copy, ~2 h/week (MSG-04 chose media only for ~10 h/week)"
   },
   {
@@ -136,28 +136,28 @@
     "area_sugerida": "devops",
     "idioma": "es",
     "requiere_info": true,
-    "label_status": "draft",
+    "label_status": "approved",
     "justificacion": "Which person, which system and which role are unknown"
   },
   {
     "id": "EDGE-15",
     "categoria": "bug",
     "prioridad": "alta",
-    "area_sugerida": "devops",
+    "area_sugerida": "backend",
     "idioma": "es",
     "requiere_info": false,
-    "label_status": "draft",
-    "justificacion": "Performance after a release (v1 rubric: devops; payments argue backend — candidate decides); IP, version and amount must NOT be masked"
+    "label_status": "approved",
+    "justificacion": "Payments slow after a release: application behavior, not infrastructure (candidate decision); IP, version and amount must NOT be masked"
   },
   {
     "id": "EDGE-16",
-    "categoria": "consulta",
+    "categoria": "otro",
     "prioridad": "baja",
     "area_sugerida": "producto",
     "idioma": "pt",
-    "requiere_info": false,
-    "label_status": "draft",
-    "justificacion": "HR policy question; no area fits (candidate decides between producto and otro-style routing)"
+    "requiere_info": true,
+    "label_status": "approved",
+    "justificacion": "HR policy question outside every category and area; area_sugerida has no \"otro\" value, so producto is the closest (candidate decision on categoria and requiere_info)"
   },
   {
     "id": "EDGE-17",
@@ -166,7 +166,7 @@
     "area_sugerida": "backend",
     "idioma": "pt",
     "requiere_info": false,
-    "label_status": "draft",
+    "label_status": "approved",
     "justificacion": "Tax document rejected blocks payment; both CNPJ formats must be masked"
   },
   {
@@ -176,7 +176,7 @@
     "area_sugerida": "producto",
     "idioma": "pt",
     "requiere_info": false,
-    "label_status": "draft",
+    "label_status": "approved",
     "justificacion": "Product question; both BR phone formats must be masked"
   }
 ]
