@@ -78,5 +78,15 @@
     "id": "EDGE-16",
     "source_area": "RH BR",
     "message": "Qual é o prazo para solicitar reembolso de despesas de viagem?"
+  },
+  {
+    "id": "EDGE-17",
+    "source_area": "Fiscal BR",
+    "message": "A nota fiscal do fornecedor CNPJ 12.345.678/0001-95 foi rejeitada pela SEFAZ e o novo cadastro com CNPJ alfanumérico 12.ABC.345/01DE-35 nem aparece na tela de fornecedores."
+  },
+  {
+    "id": "EDGE-18",
+    "source_area": "Vendas BR",
+    "message": "Me liga no (11) 98765-4321 ou no WhatsApp +55 21 99876-5432, preciso entender como funciona o desconto por volume no plano Empresarial."
   }
 ]

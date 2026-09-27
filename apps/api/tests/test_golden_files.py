@@ -1,10 +1,12 @@
 import json
+import re
 from pathlib import Path
 
 import pytest
 
 from pitz_pulse import runs
 from pitz_pulse.labels import LABEL_FILES, LabelError, load_labels
+from pitz_pulse.masking import mask_request
 
 APP_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = APP_ROOT.parents[1]
@@ -57,8 +59,21 @@ def test_case_labels_are_all_approved():
     assert all(label.label_status == "approved" for label in labels)
 
 
-def test_edge_label_set_has_16_entries():
-    assert len(load_labels(LABEL_PATHS["edge"])) == 16
+def test_edge_label_set_has_18_entries():
+    assert len(load_labels(LABEL_PATHS["edge"])) == 18
+
+
+_PII_PLACEHOLDERS = re.compile(r"\[(EMAIL|PHONE|CPF|CNPJ|CURP|RFC)\]")
+
+
+def test_edge_set_covers_every_pii_type():
+    items = json.loads(MESSAGE_FILES["edge"].read_text(encoding="utf-8"))
+    found: set[str] = set()
+    for item in items:
+        masked = mask_request(item["message"], item.get("source_area"))
+        text = masked.message + " " + (masked.source_area or "")
+        found |= set(_PII_PLACEHOLDERS.findall(text))
+    assert found == {"EMAIL", "PHONE", "CPF", "CNPJ", "CURP", "RFC"}
 
 
 def test_label_files_keys_match_runs_sets():

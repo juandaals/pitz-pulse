@@ -1,7 +1,7 @@
 {
   "set": "edge",
   "input_file": "apps/api/eval/golden/edge_cases.messages.json",
-  "input_sha256": "6f5b18fac56a139dc32848bf9047a691db6d8cd5aa4b440bea720aceb33b84d1",
+  "input_sha256": "6c67758f687e1380ff916c9626eae956890fd5aeeba9c7f898691fc53f262fbb",
   "provider": "mock",
   "model": "mock",
   "billing": "none",
@@ -13,17 +13,17 @@
   "llm_max_retries": 3,
   "timeout_s": 30.0,
   "concurrency": 4,
-  "n": 16,
-  "n_input": 16,
+  "n": 18,
+  "n_input": 18,
   "failures": [],
   "total_input_tokens": 0,
   "total_output_tokens": 0,
   "total_cost_usd": 0.0,
   "total_equivalent_api_cost_usd": 0.0,
-  "attempts_total": 16,
+  "attempts_total": 18,
   "invalid_output_attempts": 0,
   "transport_retries_total": 0,
   "p50_latency_ms_per_message": 0.0,
-  "run_at": "2026-09-27T19:57:19Z",
-  "results_sha256": "d76f247a9b0fde8893e2a0297bf529b6cada264b50a6e3d5161467e7eb82baa9"
+  "run_at": "2026-09-27T20:26:16Z",
+  "results_sha256": "fe56095785bddbf903be93ed502023a4d713e0bab6c2e01d7181362b6ce58988"
 }

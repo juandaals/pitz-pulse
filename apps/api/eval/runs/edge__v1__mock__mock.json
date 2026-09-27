@@ -190,5 +190,29 @@
     "pregunta_seguimiento": null,
     "confianza": 0.5,
     "version_prompt": "v1"
+  },
+  {
+    "id": "EDGE-17",
+    "categoria": "consulta",
+    "prioridad": "media",
+    "area_sugerida": "producto",
+    "idioma": "es",
+    "resumen": "Solicitud clasificada por el modo mock sin modelo.",
+    "requiere_info": false,
+    "pregunta_seguimiento": null,
+    "confianza": 0.5,
+    "version_prompt": "v1"
+  },
+  {
+    "id": "EDGE-18",
+    "categoria": "consulta",
+    "prioridad": "media",
+    "area_sugerida": "producto",
+    "idioma": "pt",
+    "resumen": "Solicitud clasificada por el modo mock sin modelo.",
+    "requiere_info": false,
+    "pregunta_seguimiento": null,
+    "confianza": 0.5,
+    "version_prompt": "v1"
   }
 ]

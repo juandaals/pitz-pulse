@@ -158,5 +158,25 @@
     "requiere_info": false,
     "label_status": "draft",
     "justificacion": "HR policy question; no area fits (candidate decides between producto and otro-style routing)"
+  },
+  {
+    "id": "EDGE-17",
+    "categoria": "bug",
+    "prioridad": "alta",
+    "area_sugerida": "backend",
+    "idioma": "pt",
+    "requiere_info": false,
+    "label_status": "draft",
+    "justificacion": "Tax document rejected blocks payment; both CNPJ formats must be masked"
+  },
+  {
+    "id": "EDGE-18",
+    "categoria": "consulta",
+    "prioridad": "baja",
+    "area_sugerida": "producto",
+    "idioma": "pt",
+    "requiere_info": false,
+    "label_status": "draft",
+    "justificacion": "Product question; both BR phone formats must be masked"
   }
 ]
