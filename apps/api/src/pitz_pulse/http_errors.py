@@ -11,7 +11,12 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from pitz_pulse.errors import DomainError
 
 logger = logging.getLogger("pitz_pulse.http")
-_HTTP_CODES = {401: "unauthorized", 404: "not_found", 405: "method_not_allowed"}
+_HTTP_CODES = {
+    401: "unauthorized",
+    404: "not_found",
+    405: "method_not_allowed",
+    413: "payload_too_large",
+}
 
 
 def error_response(

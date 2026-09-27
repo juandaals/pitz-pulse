@@ -2,8 +2,11 @@
 
 import hmac
 import os
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import Annotated, Any
 
+import anyio.to_thread
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Path, Query, Response, Security
 from fastapi.security import APIKeyHeader
 
@@ -21,6 +24,7 @@ from pitz_pulse.settings_api import ApiSettings, parse_api_settings
 
 MOCK_HEADER = "X-Pitz-Provider"
 RequestId = Annotated[str, Path(pattern=ID_PATTERN)]
+MAX_BODY_BYTES = 65536
 
 
 def _errors(*statuses: int) -> dict[int | str, dict[str, Any]]:
@@ -49,10 +53,26 @@ def create_app(
         pending_stale_s=settings.pending_stale_s,
     )
     running_mock = classifier.adapter.provider == MOCK
+    # Every waiter holds a worker thread: slots + 2x waiters + headroom for reads (Spec 02 §2).
+    worker_threads = 3 * settings.llm.concurrency + 16
 
-    app = FastAPI(title="Pitz Pulse", version="0.1.0")
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        limiter = anyio.to_thread.current_default_thread_limiter()
+        limiter.total_tokens = max(limiter.total_tokens, worker_threads)
+        yield
+
+    app = FastAPI(title="Pitz Pulse", version="0.1.0", lifespan=lifespan)
     app.state.service = service
     http_errors.install(app)
+
+    @app.middleware("http")
+    async def _limit_body_size(request, call_next):
+        length = request.headers.get("content-length", "")
+        if length.isdigit() and int(length) > MAX_BODY_BYTES:
+            detail = f"request body larger than {MAX_BODY_BYTES} bytes"
+            return http_errors.error_response(413, "payload_too_large", detail)
+        return await call_next(request)
 
     @app.middleware("http")
     async def _mark_mock_mode(request, call_next):
@@ -83,7 +103,7 @@ def _router(service: TriageService, api_key: str) -> APIRouter:
     header = APIKeyHeader(name="X-API-Key", auto_error=False)
     expected = api_key.encode()
 
-    def require_api_key(provided: Annotated[str | None, Security(header)]) -> None:
+    async def require_api_key(provided: Annotated[str | None, Security(header)]) -> None:
         if provided is None or not hmac.compare_digest(provided.encode(), expected):
             raise HTTPException(status_code=401, detail="missing or invalid API key")
 
