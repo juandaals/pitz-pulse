@@ -80,7 +80,7 @@ class LLMSettings:
 
     @property
     def deadline_s(self) -> float:
-        """Hard per-invoke bound: every attempt timeout plus the capped waits between them."""
+        """Per-invoke budget, checked between attempts (D28): not a wall-clock kill."""
         return self.timeout_s * (1 + self.max_retries) + self.max_retries * RETRY_WAIT_CAP_S + 10
 
 

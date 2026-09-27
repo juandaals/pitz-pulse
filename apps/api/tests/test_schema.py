@@ -201,3 +201,10 @@ def test_case_messages_file_is_valid():
     items = json.loads((REPO_ROOT / "mensajes.json").read_text(encoding="utf-8"))
     requests = [RequestInput.model_validate(item) for item in items]
     assert [r.id for r in requests] == [f"MSG-{n:02d}" for n in range(1, 13)]
+
+
+def test_lone_surrogates_are_rejected_as_invalid_text():
+    with pytest.raises(ValidationError, match="valid UTF-8"):
+        RequestInput.model_validate({"id": "a", "message": "hola \ud800"})
+    with pytest.raises(ValidationError, match="valid UTF-8"):
+        RequestInput.model_validate({"id": "a", "message": "hola", "source_area": "\udfff"})
