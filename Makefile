@@ -5,7 +5,7 @@ ROOT := $(abspath .)
 API := $(ROOT)/apps/api
 UV := uv --directory $(API) run
 
-.PHONY: install test lint classify eval compare compare-models promote up down smoke
+.PHONY: install test lint classify eval compare compare-models promote up down smoke web-types
 
 install:
 	uv --directory $(API) sync
@@ -54,3 +54,11 @@ down:
 
 smoke:
 	./scripts/smoke.sh
+
+web-types:
+	@db=$$(mktemp) && \
+	LLM_PROVIDER=mock API_KEY=web-types DB_PATH=$$db $(UV) python -c \
+		"import json; from pitz_pulse.api import create_app; print(json.dumps(create_app().openapi(), indent=2))" \
+		> apps/web/openapi.json && \
+	rm -f $$db
+	npm --prefix apps/web run gen:types
