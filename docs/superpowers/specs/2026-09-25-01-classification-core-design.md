@@ -63,7 +63,8 @@ the rule validators.
 | `graph.py` | LangGraph `StateGraph`: `call_llm → validate → (retry \| done \| fail)` + attempt logging | langgraph |
 | `classifier.py` | `build_classifier(settings, adapter=None)`; `Classifier.classify(req) -> ClassifyOutcome` | graph, masking |
 | `runs.py` | Run stems, meta, hashes, atomic writes, path confinement | stdlib |
-| `batch.py` | CLI: golden set → run file + meta; bounded pool; cancellation | classifier, runs |
+| `batch.py` | CLI: golden set → run file + meta; exit codes; stderr summary | batch_run, runs |
+| `batch_run.py` | Sliding concurrency window, per-item failure records, credential stop rule | classifier |
 | `config.py` | `LLMSettings`: read + validate env once; provider auto-selection; tracing off | stdlib |
 | `logs.py` | JSON formatter; third-party loggers pinned to WARNING | stdlib |
 
@@ -221,7 +222,7 @@ Runs are committed after every real run (D26). The batch never writes `resultado
 **Meta (`<stem>.meta.json`):** `set, input_file (repo-relative), input_sha256, provider, model,
 billing, prompt_version, prompt_sha256, tool_schema_sha256 (sha256 of the canonical JSON — sorted
 keys, no whitespace — of the tool schema actually bound; its descriptions carry rubric text outside
-the prompt file, G14), temperature (number | null), invalid_output_retries,
+the prompt file, G14; `null` for `claude_agent_sdk`, which never sends the tool), temperature (number | null), invalid_output_retries,
 llm_max_retries, timeout_s, concurrency, n, n_input (count of parsed input items, including any
 never classified), failures: [{id, kind}], results_sha256, total_input_tokens, total_output_tokens,
 total_cost_usd, total_equivalent_api_cost_usd, attempts_total, invalid_output_attempts,
@@ -326,9 +327,10 @@ that margin).
 
 Agent SDK error mapping: `authentication_failed`, `billing_error`, `invalid_request`,
 `CLINotFoundError` → rejected; `rate_limit`, `server_error`, `api_error_status` 429 / ≥ 500,
-`CLIConnectionError` and other `ClaudeSDKError`s, the SDK's bare "Control request timeout"
-exception (`ControlRequestTimeout`), deadline exceeded → unavailable; any other exception is a
-programming error and is re-raised unchanged (never absorbed as a retryable failure); a `claude -v`
+`CLIConnectionError` and other `ClaudeSDKError`s, any exception whose type is exactly `Exception`
+(the SDK's control-protocol failures, e.g. control request timeouts) → `SDKControlError` without
+its text, deadline exceeded → unavailable; any other exception (a subclass such as `ValueError`)
+is a programming error and is re-raised unchanged (never absorbed as a retryable failure); a `claude -v`
 probe that times out or cannot start → `ConfigError`; CLI stderr is piped to a callback that logs
 the constant event `agent_sdk_stderr` with the line length only, never its text; a `ResultError` whose subtype is not
 `error_max_turns` → unavailable (subtype recorded as `error_type`); `error_max_turns` or no parsable
@@ -390,17 +392,20 @@ italics must not shield a phone).
 |---|---|---|---|
 | 1 | email | `local@domain.tld`, plus-tags, subdomains, non-ASCII local parts, Slack `<mailto:…\|…>` | `[EMAIL]` |
 | 2 | CNPJ | `NN.NNN.NNN/NNNN-NN` with each separator optional (incl. `12345678/0001-90`), 14 bare digits, 2026 alphanumeric format formatted or bare, case-insensitive | `[CNPJ]` |
-| 3 | CPF | `NNN.NNN.NNN-NN` with `.`/`-` tolerated in any position and the last separator required (so bare 11 digits stay phones); runs before the IPv4 guard, so an address of this exact 3.3.3.2 shape is masked as `[CPF]` (accepted, privacy first) | `[CPF]` |
+| 3 | CPF | `NNN.NNN.NNN-NN` with `.`/`-` tolerated in any position and the last separator required (so bare 11 digits stay phones); with two or more separators only digits bound it (`CPF123.456.789-09` is masked), the looser `NNNNNNNNN-NN` shape keeps alphanumeric bounds; runs before the IPv4 guard, so an address of this exact 3.3.3.2 shape is masked as `[CPF]` (accepted, privacy first) | `[CPF]` |
 | 4 | CURP | `[A-Z]{4}\d{6}[HMX][A-Z]{5}[A-Z0-9]\d`, case-insensitive | `[CURP]` |
 | 5 | RFC | compact `[A-ZÑ&]{3,4}\d{6}[A-Z0-9]{3}` (case-insensitive); separated `[A-ZÑ&]{3,4}[-\s]\d{6}[-\s][A-Z0-9]{3}` with the hyphen form case-insensitive and the space form uppercase-only (a case-insensitive space form would eat ordinary prose like "del 230415 com"); all forms require the 6 digits to be a valid YYMMDD date | `[RFC]` |
-| 6 | phone | optional `+`/`(`, 10–14 digits total with runs of space/`-`/`.`/`()` between groups, matched only in the text outside guard spans; local `NNNN[- ]NNNN`, `NNNNN[- ]NNNN`; bare 8–9 digit numbers, and separated local forms with an optional `(DD)`/`DD` area code (matched before the guards, so `tel (11) 2045-2078` is not taken for a year list), only when immediately preceded (within up to 3 connector characters) by a phone keyword — `tel`, `teléfono`/`telefono`, `telefone`, `cel`, `celular`, `whats`, `whatsapp`, `número`/`numero`, `fone`, `ligue`, `llame`, `llamar` | `[PHONE]` |
+| 6 | phone | optional `+`/`(`, 10–14 digits total with runs of space/`-`/`.`/`()` between groups, matched only in the text outside guard spans; local `NNNN[- ]NNNN`, `NNNNN[- ]NNNN`; a local number behind an explicit area code — `(DD)`/`(0DD)`, or `+CC DD` — at any time; bare 8–9 digit numbers, and separated local forms with an optional `(DD)`/`(0DD)`/`DD`/`DD-` area code, only when immediately preceded (within up to 3 connector characters) by a phone keyword — `tel`, `teléfono`/`telefono`, `telefone`, `cel`, `celular`, `whats`, `whatsapp`, `número`/`numero`, `fone`, `ligue`, `llame`, `llamar` | `[PHONE]` |
 
 Guards (spans the phone rule never searches inside): year lists/ranges (e.g. `2024-2025`,
 `2024, 2025 2026`), year-month (e.g. `2024-09`), ISO/dotted/slashed dates and date ranges, IPv4
 addresses (every octet ≤ 255), and amounts after a currency sign — bounded to a plausible number
 (`\d{1,3}(?:[.,]\d{3})+` or `\d{1,6}`, optional 1–2 decimal digits, not followed by another digit)
 so it cannot swallow an adjacent phone number sitting right after the currency symbol.
-Accepted over-masking (documented): 8–9 digit order/ticket numbers after `número`/`numero`
+The area-code and keyword passes run before the guards, so `+55 11 2045-2078` or
+`tel 11-2045-2078` are not taken for a year list.
+Accepted over-masking (documented, pinned by tests): `tel 2024-2025` → `[PHONE]`,
+`SKU BR-SPO-001-2024-01` → `[CNPJ]`, 8–9 digit order/ticket numbers after `número`/`numero`
 (privacy first, D14 ruling; only the prompt copy is masked), bare 11-digit sequences (CPF or phone →
 `[PHONE]`), 10–14-digit
 IDs/timestamps not covered by a guard, and 14-character alphanumeric codes ending in two digits that
@@ -453,8 +458,9 @@ item is `needs_review` — documented), tokens 0, `model="mock"`, `billing="none
 | No tool input, unparsable JSON, `max_tokens`, `refusal`, schema violation | feedback retry, then `invalid_output` |
 | Unexpected exception (graph node, masking, final validation) | logged (class only, constant message); `Classifier.classify` raises `ClassificationCrash(error_type, attempts)`; batch records kind `unexpected` and continues; Spec 02 marks the row failed |
 | Credential rejection (401/403, `authentication_failed`, `billing_error`, `CLINotFoundError`) | `llm_rejected`; batch stops submitting (remaining items `cancelled`) |
+| Every item rejected | nothing written, exit 1; stderr lists each distinct `error_type` with its count (e.g. `APIStatusError:400 ×12`) and says "check the credential" only when a credential type is among them |
 | Other rejection (e.g. 400/413 on one message) | `llm_rejected` for that item; batch continues |
-| Input file not a non-empty JSON list | `RunError`, exit 2 before any call |
+| Input file not UTF-8, not JSON, or not a non-empty JSON list | `RunError`, exit 2 before any call |
 | Bad config (provider, model, credentials, temperature, prompt version, ranges) | startup error, explicit message |
 
 ## 10. Gaps, edge cases, contradictions (this spec)
@@ -462,7 +468,8 @@ item is `needs_review` — documented), tokens 0, `model="mock"`, `billing="none
 G1 `requiere_info` criterion · G3 `source_area` as masked context · G4/G30 temperature ·
 G7 word limit via Pydantic + feedback · G8 pregunta language · G9/G34 masking formats and guards ·
 G10 synthetic PII · G17 input limits · G18 delimiter neutralization · G23 strict schema stripping ·
-G29/G32 Agent SDK isolation and env · G31 tracing egress · G33 hard deadline.
+G29/G32 Agent SDK isolation and env · G31 tracing egress · G33 per-invoke deadline budget
+(checked between attempts; an in-flight attempt can overrun it — §8.8, Spec 02 claim token).
 Other edge cases: already-masked text is unchanged by re-masking; mixed ES/PT → dominant language;
 batch Ctrl-C cancels queued calls; the first credential rejection stops the batch (other
 rejections do not); edge "maximum length"
