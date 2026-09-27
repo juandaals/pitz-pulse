@@ -5,7 +5,7 @@ import logging
 import os
 import statistics
 import sys
-from concurrent.futures import CancelledError, ThreadPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, CancelledError, ThreadPoolExecutor, wait
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
@@ -19,6 +19,7 @@ from pitz_pulse.config import ConfigError, LLMSettings, load_llm_settings
 from pitz_pulse.graph import AttemptRecord
 from pitz_pulse.logs import configure_logging
 from pitz_pulse.prompts import PromptError
+from pitz_pulse.providers.base import CREDENTIAL_ERROR_TYPES
 from pitz_pulse.runs import (
     SETS,
     RunError,
@@ -75,36 +76,51 @@ class BatchInterrupted(Exception):
         self.in_flight = in_flight
 
 
+def _is_credential_rejection(exc: ClassificationError) -> bool:
+    last = exc.attempts[-1] if exc.attempts else None
+    return (
+        exc.kind == "llm_rejected"
+        and last is not None
+        and (last.error_type in CREDENTIAL_ERROR_TYPES)
+    )
+
+
+def _unexpected(request_id: str, error_type: str, attempts=()) -> Failure:
+    logger.error(
+        "batch_item_failed",
+        extra={"fields": {"message_id": request_id, "error_type": error_type}},
+    )
+    return Failure(request_id, "unexpected", list(attempts))
+
+
 def _record(future, request_id, outcomes, failures) -> bool:
-    """Store the outcome; return False once a rejection means we should stop spending."""
+    """Store the outcome; return False once a credential rejection means we should stop."""
     try:
         outcomes[request_id] = future.result()
     except CancelledError:
         failures.append(Failure(request_id, "cancelled"))
     except ClassificationError as exc:
         failures.append(Failure(request_id, exc.kind, exc.attempts))
-        if exc.kind == "llm_rejected":  # bad credential or request: stop spending
+        if _is_credential_rejection(exc):  # every further call would fail the same way
             return False
     except ClassificationCrash as exc:
-        logger.error(
-            "batch_item_failed",
-            extra={"fields": {"message_id": request_id, "error_type": exc.error_type}},
-        )
-        failures.append(Failure(request_id, "unexpected", exc.attempts))
+        failures.append(_unexpected(request_id, exc.error_type, exc.attempts))
+    except Exception as exc:  # a classifier bug must not lose the other items
+        failures.append(_unexpected(request_id, type(exc).__name__))
     return True
 
 
 def run_batch(classifier, requests, concurrency: int):
-    """Keep at most `concurrency` requests in flight, submitting the next only once a slot
-    frees up: a rejection (or Ctrl-C) then bounds further spend to whatever the pool already
-    holds, instead of racing a burst of pre-queued work against the stop decision.
+    """Keep at most `concurrency` requests in flight and refill each slot as soon as it
+    frees up: a credential rejection (or Ctrl-C) then bounds further spend to whatever the
+    pool already holds, and one slow item never stalls the other slots.
     """
     outcomes: dict[str, ClassifyOutcome] = {}
     failures: list[Failure] = []
     pool = ThreadPoolExecutor(max_workers=concurrency)
     pending = iter(requests)
     window: dict = {}
-    stopped = False
+    stopped = interrupted = False
 
     def fill() -> None:
         while len(window) < concurrency:
@@ -113,22 +129,23 @@ def run_batch(classifier, requests, concurrency: int):
                 return
             window[pool.submit(classifier.classify, request)] = request.id
 
-    fill()
     try:
+        fill()
         while window:
-            for future in as_completed(list(window)):
-                request_id = window.pop(future)
-                if not _record(future, request_id, outcomes, failures):
+            done, _ = wait(window, return_when=FIRST_COMPLETED)
+            for future in done:
+                if not _record(future, window.pop(future), outcomes, failures):
                     stopped = True
-                if not stopped:
-                    fill()
+            if not stopped:
+                fill()
     except KeyboardInterrupt:
+        interrupted = True
         in_flight = sum(1 for future in window if future.running())
-        pool.shutdown(wait=False, cancel_futures=True)
         raise BatchInterrupted(in_flight) from None
+    finally:
+        pool.shutdown(wait=not interrupted, cancel_futures=True)
     if stopped:  # requests never submitted: record them as cancelled
         failures.extend(Failure(r.id, "cancelled") for r in pending)
-    pool.shutdown(wait=True)
     return outcomes, failures
 
 

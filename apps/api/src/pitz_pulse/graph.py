@@ -29,6 +29,7 @@ class AttemptRecord:
     equivalent_api_cost_usd: float = 0.0
     latency_ms: float = 0.0
     transport_retries: int = 0
+    error_type: str | None = None  # class or literal name only (e.g. "APIStatusError:401")
 
 
 class ClassifyState(TypedDict, total=False):
@@ -63,7 +64,7 @@ def _evaluate(call: LLMCall) -> tuple[ModelOutput | None, str | None]:
 
 
 def build_graph(adapter: ProviderAdapter, prompt: Prompt, tool: dict[str, Any], settings):
-    def record(state: ClassifyState, attempt: AttemptRecord, actual_model: str, error_type=None):
+    def record(state: ClassifyState, attempt: AttemptRecord, actual_model: str):
         state["sink"].append(attempt)
         fields = {
             "message_id": state["message_id"],
@@ -82,8 +83,8 @@ def build_graph(adapter: ProviderAdapter, prompt: Prompt, tool: dict[str, Any], 
             "transport_retries": attempt.transport_retries,
             "pii_masked": state["masked"].pii_counts,
         }
-        if error_type:
-            fields["error_type"] = error_type
+        if attempt.error_type:
+            fields["error_type"] = attempt.error_type
         log_event(logger, "llm_call", **fields)
 
     def call_llm(state: ClassifyState) -> dict[str, Any]:
@@ -95,26 +96,26 @@ def build_graph(adapter: ProviderAdapter, prompt: Prompt, tool: dict[str, Any], 
         except LLMError as exc:
             latency = exc.latency_ms or elapsed_ms(start)
             if exc.kind not in _ERROR_KINDS:
+                unknown = f"UnknownLLMErrorKind:{exc.kind}"
                 record(
                     state,
-                    AttemptRecord(attempt, "error", latency_ms=latency),
+                    AttemptRecord(attempt, "error", latency_ms=latency, error_type=unknown),
                     adapter.model,
-                    f"UnknownLLMErrorKind:{exc.kind}",
                 )
                 raise RuntimeError(f"unknown LLMError kind {exc.kind}") from None
             record(
                 state,
-                AttemptRecord(attempt, exc.kind, latency_ms=latency),
+                AttemptRecord(attempt, exc.kind, latency_ms=latency, error_type=exc.error_type),
                 adapter.model,
-                exc.error_type,
             )
             return {"attempt": attempt, "last_call": None, "error_kind": _ERROR_KINDS[exc.kind]}
         except Exception as exc:
             record(
                 state,
-                AttemptRecord(attempt, "error", latency_ms=elapsed_ms(start)),
+                AttemptRecord(
+                    attempt, "error", latency_ms=elapsed_ms(start), error_type=type(exc).__name__
+                ),
                 adapter.model,
-                type(exc).__name__,
             )
             raise
         return {"attempt": attempt, "last_call": call, "error_kind": None}

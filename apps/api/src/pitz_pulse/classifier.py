@@ -50,26 +50,26 @@ class Classifier:
 
     def classify(self, req: RequestInput) -> ClassifyOutcome:
         sink: list[AttemptRecord] = []
-        state = {
-            "masked": mask_request(req.message, req.source_area),
-            "message_id": req.id,
-            "attempt": 0,
-            "sink": sink,
-        }
-        try:
+        try:  # masking, the graph and the final validation all surface as our own errors
+            state = {
+                "masked": mask_request(req.message, req.source_area),
+                "message_id": req.id,
+                "attempt": 0,
+                "sink": sink,
+            }
             with tracing_context(enabled=False):
                 final = self._graph.invoke(
                     state, config={"recursion_limit": recursion_limit(self.settings)}
                 )
+            if final.get("output") is not None:
+                data = {
+                    "id": req.id,
+                    **final["output"].model_dump(mode="json"),
+                    "version_prompt": self.prompt.version,
+                }
+                return ClassifyOutcome(Classification.model_validate(data), list(sink))
         except Exception as exc:
             raise ClassificationCrash(type(exc).__name__, list(sink)) from exc
-        if final.get("output") is not None:
-            data = {
-                "id": req.id,
-                **final["output"].model_dump(mode="json"),
-                "version_prompt": self.prompt.version,
-            }
-            return ClassifyOutcome(Classification.model_validate(data), list(sink))
         if final.get("error_kind"):
             raise ClassificationError(final["error_kind"], list(sink))
         raise ClassificationCrash("GraphEndedWithoutResult", list(sink))

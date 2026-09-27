@@ -31,6 +31,20 @@ class LLMError(Exception):
         self.latency_ms = latency_ms
 
 
+# Rejections that no retry or other item can fix: the batch stops spending on these only.
+CREDENTIAL_ERROR_TYPES = frozenset(
+    {
+        "APIStatusError:401",
+        "APIStatusError:403",
+        "api_error_status:401",
+        "api_error_status:403",
+        "authentication_failed",
+        "billing_error",
+        "CLINotFoundError",
+    }
+)
+
+
 @dataclass(frozen=True)
 class Deadline:
     expires_at: float

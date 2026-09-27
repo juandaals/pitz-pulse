@@ -154,7 +154,7 @@ def test_peak_concurrency(app_root, concurrency, n, expected):
 
 
 def test_first_rejected_cancels_remaining(app_root):
-    adapter = FakeAdapter([LLMError("rejected", "401")] + [make_call()] * 9)
+    adapter = FakeAdapter([LLMError("rejected", "APIStatusError:401")] + [make_call()] * 9)
     requests = [RequestInput(id=f"R{i}", message="m") for i in range(10)]
     _, failures = run_batch(build_classifier(settings_for(app_root), adapter), requests, 1)
     assert len(adapter.calls) <= 2  # the single worker may already hold the next item
@@ -163,16 +163,26 @@ def test_first_rejected_cancels_remaining(app_root):
 
 
 def test_ctrl_c_in_main_thread_abandons_and_writes_nothing(app_root, monkeypatch, capsys):
-    real = batch_module.as_completed
+    real = batch_module.wait
+    calls = []
 
-    def interrupted(futures):
-        iterator = real(futures)
-        yield next(iterator)
-        raise KeyboardInterrupt
+    def interrupted(*args, **kwargs):
+        calls.append(1)
+        if len(calls) > 1:
+            raise KeyboardInterrupt
+        return real(*args, **kwargs)
 
-    monkeypatch.setattr(batch_module, "as_completed", interrupted)
+    monkeypatch.setattr(batch_module, "wait", interrupted)
     code, adapter = run_main(app_root, [make_call()] * 5, concurrency=1)
     run, meta = run_paths(app_root, STEM)
     assert code == 130 and not run.exists() and not meta.exists()
     assert len(adapter.calls) <= 2
     assert "interrupted" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("content,needle", [("{}", "list"), ("[]", "no requests")])
+def test_non_list_or_empty_input_exits_2(app_root, capsys, content, needle):
+    (app_root.parents[1] / "mensajes.json").write_text(content, encoding="utf-8")
+    code, adapter = run_main(app_root, [make_call()])
+    assert code == 2 and adapter.calls == []
+    assert needle in capsys.readouterr().err

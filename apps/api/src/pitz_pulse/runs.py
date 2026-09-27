@@ -101,6 +101,10 @@ def load_requests(path: Path) -> list[RequestInput]:
         items = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError:
         raise RunError(f"{path.name} is not valid JSON") from None
+    if not isinstance(items, list):
+        raise RunError(f"{path.name} must be a JSON list of requests")
+    if not items:
+        raise RunError(f"{path.name} contains no requests")
     requests, seen = [], set()
     for index, item in enumerate(items):
         try:

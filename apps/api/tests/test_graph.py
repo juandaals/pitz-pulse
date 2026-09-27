@@ -203,3 +203,40 @@ def test_classify_never_traces(monkeypatch):
     clf, _ = classifier([make_call()])  # build_classifier disables tracing
     assert not utils.tracing_is_enabled()
     clf.classify(request())
+
+
+def test_masking_failure_surfaces_as_crash(monkeypatch):
+    from pitz_pulse import classifier as classifier_module
+
+    def broken(*_args):
+        raise ValueError(SENTINEL)
+
+    monkeypatch.setattr(classifier_module, "mask_request", broken)
+    clf, adapter = classifier([make_call()])
+    with pytest.raises(ClassificationCrash) as info:
+        clf.classify(request())
+    assert info.value.error_type == "ValueError" and info.value.attempts == []
+    assert adapter.calls == [] and SENTINEL not in str(info.value)
+
+
+def test_final_validation_failure_surfaces_as_crash_with_attempts(monkeypatch):
+    from pitz_pulse import classifier as classifier_module
+
+    class Broken:
+        @staticmethod
+        def model_validate(_data):
+            raise ValueError(SENTINEL)
+
+    monkeypatch.setattr(classifier_module, "Classification", Broken)
+    clf, _ = classifier([make_call()])
+    with pytest.raises(ClassificationCrash) as info:
+        clf.classify(request())
+    assert [a.outcome for a in info.value.attempts] == ["ok"]
+
+
+def test_rejected_attempt_carries_error_type():
+    clf, _ = classifier([LLMError("rejected", "APIStatusError:401")])
+    with pytest.raises(ClassificationError) as info:
+        clf.classify(request())
+    assert info.value.kind == "llm_rejected"
+    assert info.value.attempts[-1].error_type == "APIStatusError:401"
