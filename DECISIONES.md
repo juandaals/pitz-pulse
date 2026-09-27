@@ -43,7 +43,7 @@ for company data (the Agent SDK path exists for development).
 
 Per message, from the rendered prompt and tool schema (≈ 4,600 characters) plus an average case
 message (≈ 115 characters): about 1,800 input tokens and 150 output tokens. At Haiku 4.5 list
-prices in `models_catalog.py` (US$1 / US$5 per million input / output tokens) that is ≈ US$0.0026
+prices recorded in `models_catalog.py` on 2026-09-25 (US$1 / US$5 per million input / output tokens) that is ≈ US$0.0026
 per call; adding ~5 % invalid-output retries gives ≈ US$0.0027 per message.
 
 | Volume per month | Estimated cost |
@@ -57,7 +57,7 @@ Batch API (about half price), skip duplicates before calling the model, cache th
 prefix once it passes the model's minimum cacheable size, and route easy messages to the cheapest
 model while escalating low-confidence ones.
 
-## 5. Slack in production
+## 5. Slack in production (design — not implemented yet, Spec 06d)
 
 ```
 Slack ─event─► /slack/events ─ verify signature ─ ignore bots/subtypes/thread replies
@@ -71,7 +71,7 @@ Slack ─event─► /slack/events ─ verify signature ─ ignore bots/subtypes
       chat.postMessage(thread_ts) ─► reply in thread
 ```
 
-The signature replaces the API key on that route. The event id makes Slack's retries harmless
+The design: the signature replaces the API key on that route. The event id makes Slack's retries harmless
 because intake is idempotent. The reply only happens for the call that actually classified. At
 scale the background task becomes a durable queue so a restart loses nothing.
 

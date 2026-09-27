@@ -16,7 +16,7 @@ correct them, and evaluates the classifier against golden sets.
 ## 1. Quick start
 
 ```bash
-docker compose up --build        # no .env needed: runs in mock mode with API key dev-local-key
+docker compose up --build        # no .env and no credential exported in your shell → mock mode, API key dev-local-key
 curl -s localhost:8000/health
 curl -s -X POST localhost:8000/solicitudes \
   -H 'X-API-Key: dev-local-key' -H 'Content-Type: application/json' \
@@ -28,7 +28,11 @@ curl -s -X PATCH localhost:8000/solicitudes/DEMO-1 \
 make smoke                       # end-to-end check against the running stack
 ```
 
-`dev-local-key` is for local use only. Mock responses carry the header `X-Pitz-Provider: mock`, and
+Compose also reads credentials exported in your shell: with `ANTHROPIC_API_KEY` exported the stack
+auto-selects the paid provider (and `make smoke` makes billed calls); with `CLAUDE_CODE_OAUTH_TOKEN`
+exported it selects the Agent SDK, which also needs `LLM_TEMPERATURE=none` or it refuses to start.
+For a guaranteed mock run: `env -u ANTHROPIC_API_KEY -u CLAUDE_CODE_OAUTH_TOKEN docker compose up --build`.
+`dev-local-key` is for local use only; if your shell exports `API_KEY`, use that value in the curls. Mock responses carry the header `X-Pitz-Provider: mock`, and
 every stored row records the `provider` and `model` that classified it. OpenAPI docs:
 `http://localhost:8000/docs`.
 
@@ -36,10 +40,10 @@ API summary (paths follow the case contract):
 
 | Method | Path | Notes |
 |---|---|---|
-| POST | `/solicitudes` | `{id, message, source_area?}` · 201 classified now · 200 already classified (idempotent: same id + same text never calls the model twice) · 409 same id, different text |
+| POST | `/solicitudes` | `{id, message, source_area?}` · 201 classified now · 200 already classified, no model call (idempotent on id + exact text) · 409 same id, different text · a failed request is retried by a new POST |
 | GET | `/solicitudes` | filters `categoria`, `prioridad`, `area_sugerida`, `status`, `needs_review`; `limit` 1–100, `offset` |
 | GET | `/solicitudes/{id}` | current values + `original_classification` + correction history |
-| PATCH | `/solicitudes/{id}` | correct any subset of the contract fields + `author` (+ `reason`); the original classification is kept |
+| PATCH | `/solicitudes/{id}` | correct any of `categoria, prioridad, area_sugerida, idioma, resumen, requiere_info, pregunta_seguimiento` + `author` (+ `reason`); the original classification is kept |
 
 Every error has the shape `{error, detail}`; see `docs/superpowers/specs/2026-09-25-02-service-persistence-design.md` §4.
 
@@ -65,13 +69,19 @@ cp .env.example .env
 docker compose up --build        # the API now classifies with claude-haiku-4-5 at temperature 0
 ```
 
+**First real call.** The strict tool schema and the full request shape have only been verified
+offline (no real call was made). The first real request — a single POST, or `make classify
+SET=case` (12 messages) — is the live acceptance check: if the API rejected the schema, every
+request would fail with `classification_failed` / `llm_rejected` and nothing would be promoted.
+The Agent SDK path (`CLAUDE_CODE_OAUTH_TOKEN`) has likewise only been started, never called.
+
 With `LLM_PROVIDER=anthropic_api` and an empty key the service refuses to start and names the
 missing variable (it never falls back to mock silently). Rows classified earlier by the mock stay
 in the database volume and keep `provider: mock`; run `docker compose down -v` to start clean.
 
 ## 4. Development
 
-Prerequisites: `make` and [`uv`](https://docs.astral.sh/uv/) (it installs Python 3.12).
+Prerequisites: `make`, [`uv`](https://docs.astral.sh/uv/) (it installs Python 3.12), Docker; `make smoke` also needs `curl` and `python3` on the host.
 
 ```bash
 make install        # uv sync in apps/api
@@ -108,7 +118,10 @@ make promote RUN=case__v1__anthropic_api__claude-haiku-4-5  # replaces the mock 
 
 `make promote` refuses anything that is not a clean `anthropic_api` / `claude-haiku-4-5` /
 temperature-0 run of the case set with matching hashes (prompt, tool schema, inputs, results). A
-mock run needs `ALLOW_MOCK=1`, and a mock promotion never replaces a real result.
+mock run needs `ALLOW_MOCK=1`, and a mock promotion never replaces a real result unless you also
+pass `FORCE=1` (don't). To regenerate the committed mock deliverable exactly:
+`make classify SET=case FORCE=1 LLM_PROVIDER=mock && make promote RUN=case__v1__mock__mock ALLOW_MOCK=1`
+(a command-line `LLM_PROVIDER` overrides the one loaded from `.env`).
 
 **Last eval report (mock, not model quality).** `make eval RUN=case__v1__mock__mock`: categoria
 10/12, prioridad 5/12, area_sugerida 9/12, idioma 12/12, requiere_info 5/12, all five fields 2/12.
@@ -134,10 +147,11 @@ case set without regressing the edge set, then promote.
 ## 7. Structured logs
 
 One JSON line per model attempt (latency, tokens, estimated cost), one `request_outcome` per POST,
-never message text, model output or exception messages. Example (mock):
+never message text, model output or exception messages. Real line (mock provider) for a message
+that contained an email address:
 
 ```json
-{"message_id": "DEMO-1", "provider": "mock", "model": "mock", "actual_model": "mock", "prompt_version": "v1", "attempt": 1, "outcome": "ok", "latency_ms": 0.0, "input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0, "equivalent_api_cost_usd": 0.0, "billing": "none", "transport_retries": 0, "pii_masked": {"email": 1}, "level": "INFO", "logger": "pitz_pulse.llm", "event": "llm_call"}
+{"message_id": "DEMO-2", "provider": "mock", "model": "mock", "actual_model": "mock", "prompt_version": "v1", "attempt": 1, "outcome": "ok", "latency_ms": 0.0, "input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0, "equivalent_api_cost_usd": 0.0, "billing": "none", "transport_retries": 0, "pii_masked": {"email": 1}, "ts": "2026-09-27T16:14:08-0500", "level": "INFO", "logger": "pitz_pulse.llm", "event": "llm_call"}
 ```
 
 ## 8. Assumptions
@@ -158,6 +172,9 @@ never message text, model output or exception messages. Example (mock):
 | Chunked request bodies without `Content-Length` are not size-limited in the app | Only `Content-Length` is checked | Put nginx (`client_max_body_size`) in front |
 | Stuck `pending` rows after a container kill answer 409 until they go stale (~9 min) | Conservative stale window | Wait for `Retry-After`, or `docker compose down -v` in development |
 | `POST /solicitudes/` (trailing slash) redirects with 307 | Starlette default | Use the exact path |
+| Live acceptance of the strict tool schema and the Agent SDK path | No real call in development (D29) | The first real call (section 3) |
+| `AI_LOG.md` | Written by the candidate | — |
+| Extras (web UI, CI, model comparison, duplicates, Slack) | Parts 1–4 first | Specs 05–06 |
 
 ## 10. Documentation map
 
