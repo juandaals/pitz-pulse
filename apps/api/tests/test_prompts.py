@@ -121,7 +121,9 @@ def test_no_golden_message_leaks_into_prompts_or_tool_schema():
 
     texts = [p.read_text(encoding="utf-8") for p in (APP_ROOT / "prompts").glob("v*.md")]
     texts.append(json.dumps(build_tool_schema(strict=True), ensure_ascii=False))
-    for message in _golden_messages():
+    messages = _golden_messages()
+    assert len(messages) >= 12 and len(texts) >= 2  # never pass vacuously on missing files
+    for message in messages:
         for text in texts:
             assert not _leaks(message, text), message
 

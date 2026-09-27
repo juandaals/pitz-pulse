@@ -45,8 +45,8 @@ class Classifier:
         self.adapter = adapter
         self.prompt = prompt
         self.settings = settings
-        tool = build_tool_schema(strict=adapter.caps.supports_strict)
-        self._graph = build_graph(adapter, prompt, tool, settings)
+        self.tool = build_tool_schema(strict=adapter.caps.supports_strict)
+        self._graph = build_graph(adapter, prompt, self.tool, settings)
 
     def classify(self, req: RequestInput) -> ClassifyOutcome:
         sink: list[AttemptRecord] = []

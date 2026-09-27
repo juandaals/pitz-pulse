@@ -53,6 +53,12 @@ def sha256_hex(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def canonical_sha256(value: object) -> str:
+    """Hash of canonical JSON (sorted keys, no whitespace): stable across dict ordering."""
+    text = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return sha256_hex(text.encode("utf-8"))
+
+
 def serialize_run(items: list[Classification]) -> bytes:
     rows = []
     for item in items:

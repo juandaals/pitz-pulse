@@ -205,6 +205,30 @@ def test_classify_never_traces(monkeypatch):
     clf.classify(request())
 
 
+def test_graph_runs_with_tracing_disabled_even_if_env_enables_it(monkeypatch):
+    from langsmith import utils
+
+    seen = []
+
+    class Spy(FakeAdapter):
+        def invoke(self, *args):
+            seen.append(utils.tracing_is_enabled())
+            return super().invoke(*args)
+
+    settings = parse_llm_settings({})
+    clf = build_classifier(settings, Spy([make_call()]))
+    # Re-enable after build_classifier forced it off: only the wrapper can keep it off now.
+    for name in ("LANGSMITH_TRACING", "LANGSMITH_TRACING_V2"):
+        monkeypatch.setenv(name, "true")
+    monkeypatch.setenv("LANGSMITH_API_KEY", "x")
+    monkeypatch.setenv("LANGSMITH_ENDPOINT", "http://127.0.0.1:9")  # never the network
+    utils.get_env_var.cache_clear()
+    assert utils.tracing_is_enabled()
+    clf.classify(request())
+    utils.get_env_var.cache_clear()
+    assert seen == [False]
+
+
 def test_masking_failure_surfaces_as_crash(monkeypatch):
     from pitz_pulse import classifier as classifier_module
 

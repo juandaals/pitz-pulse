@@ -10,6 +10,8 @@ dependencies = [
     "langchain-anthropic>=1.7,<2",
     "anthropic>=1.8,<2",
     "claude-agent-sdk>=0.2.160,<0.3",
+    "langsmith>=0.14.1,<0.15",  # tracing_context: classify never traces (D14)
+    "anyio>=4.15,<5",  # runs the Agent SDK's async query from a worker thread
 ]
 
 [dependency-groups]

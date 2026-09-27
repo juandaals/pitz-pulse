@@ -23,6 +23,7 @@ from pitz_pulse.providers.base import CREDENTIAL_ERROR_TYPES
 from pitz_pulse.runs import (
     SETS,
     RunError,
+    canonical_sha256,
     ensure_writable,
     load_requests,
     repo_root,
@@ -43,6 +44,7 @@ META_KEYS = (
     "billing",
     "prompt_version",
     "prompt_sha256",
+    "tool_schema_sha256",
     "temperature",
     "invalid_output_retries",
     "llm_max_retries",
@@ -150,8 +152,15 @@ def run_batch(classifier, requests, concurrency: int):
 
 
 def build_meta(
-    settings: LLMSettings, set_name: str, input_bytes: bytes, prompt, requests, outcomes, failures
+    settings: LLMSettings,
+    set_name: str,
+    input_bytes: bytes,
+    classifier,
+    requests,
+    outcomes,
+    failures,
 ) -> dict:
+    prompt = classifier.prompt
     attempts = [a for o in outcomes.values() for a in o.attempts]
     attempts += [a for f in failures for a in f.attempts]
     per_message = [sum(a.latency_ms for a in o.attempts) for o in outcomes.values()]
@@ -164,6 +173,8 @@ def build_meta(
         "billing": settings.caps.billing,
         "prompt_version": prompt.version,
         "prompt_sha256": prompt.sha256,
+        # Tool descriptions carry rubric text outside the prompt file (G14).
+        "tool_schema_sha256": canonical_sha256(classifier.tool),
         "temperature": settings.temperature,
         "invalid_output_retries": settings.invalid_output_retries,
         "llm_max_retries": settings.max_retries,
@@ -249,7 +260,7 @@ def main(argv=None, settings: LLMSettings | None = None, classifier=None) -> int
         if r.id in outcomes
     ]
     meta = build_meta(
-        settings, args.set_name, input_bytes, classifier.prompt, requests, outcomes, failures
+        settings, args.set_name, input_bytes, classifier, requests, outcomes, failures
     )
     run_bytes = serialize_run(items)
     try:

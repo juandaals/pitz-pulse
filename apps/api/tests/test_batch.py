@@ -13,6 +13,7 @@ from pitz_pulse.config import DEFAULT_APP_ROOT, parse_llm_settings
 from pitz_pulse.providers.base import LLMError
 from pitz_pulse.runs import run_paths, sha256_hex
 from pitz_pulse.schema import RequestInput
+from pitz_pulse.tool_schema import build_tool_schema
 
 STEM = "case__v1__mock__mock"
 
@@ -57,6 +58,9 @@ def test_success_writes_sorted_run_and_exact_meta(app_root):
     assert meta["input_file"] == "mensajes.json" and meta["billing"] == "none"
     assert meta["total_input_tokens"] == 500 and meta["temperature"] is None
     assert meta["run_at"].endswith("Z")
+    tool = build_tool_schema(strict=True)  # FakeAdapter supports strict tool use
+    canonical = json.dumps(tool, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    assert meta["tool_schema_sha256"] == hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 def test_never_writes_resultados_json(app_root):
