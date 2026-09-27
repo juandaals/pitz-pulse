@@ -333,6 +333,8 @@ History JSON stores typed values (`true`, not `1`).
   contract; the non-blank check uses the stripped value. A model question padded past 300 chars
   is invalid output (retried once).
 - Repeated query params (`?categoria=bug&categoria=datos`) take the last value.
+- The 413 limit reads `Content-Length`; a chunked body without it is not bounded in the app (nginx in Spec 04 sets `client_max_body_size`).
+- On crash paths `request_outcome` logs `status: null`; the row state is visible through GET and the attempts through `llm_call`.
 - Late success is discarded when a re-claimer already finished (classified or failed): the G24
   guard is kept as is; the cost is one extra paid retry in a rare overload race.
 - NFC and NFD forms of the same text count as different text (no normalization, as G5).

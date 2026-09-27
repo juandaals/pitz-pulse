@@ -16,7 +16,7 @@ Split in two phases because the docs need Spec 03's numbers:
 
 | File | Responsibility |
 |---|---|
-| `apps/api/Dockerfile` | `python:3.12-slim`; `COPY --from=ghcr.io/astral-sh/uv` ; copy `pyproject.toml uv.lock src/ prompts/ migrations/`; `uv sync --frozen --no-dev`; `useradd -m app` (writable `HOME`, needed by the Agent SDK CLI); `mkdir -p /data && chown app:app /data`; `USER app`; `uvicorn --factory pitz_pulse.api:create_app --workers 1` |
+| `apps/api/Dockerfile` | `python:3.12-slim`; `COPY --from=ghcr.io/astral-sh/uv` ; copy `pyproject.toml uv.lock src/ prompts/ migrations/`; `uv sync --frozen --no-dev`; `useradd -m app` (writable `HOME`, needed by the Agent SDK CLI); `mkdir -p /data && chown app:app /data`; `USER app`; `uvicorn --factory pitz_pulse.api:create_app --workers 1` (lifespan must stay on: it raises the thread limiter, Spec 02 §2) |
 | `docker-compose.yml` | `api` service; `environment:` with `${VAR:-default}` for every variable except `LLM_PROVIDER` (`${LLM_PROVIDER-}`: unset stays unset so auto-selection works) and `LLM_TEMPERATURE` (`${LLM_TEMPERATURE-0}`: `none` must survive); named volume `pitz-data:/data`; port `${API_PORT:-8000}`; healthcheck via Python `urllib` (no curl in slim) with `start_period`; `web` service under profile `web` (Spec 05) |
 | `Makefile` | `-include .env` + `export`; repo-root path variables made absolute with `$(abspath …)`; targets below |
 | `.env.example` | full inventory (§3), safe defaults, empty secrets |
