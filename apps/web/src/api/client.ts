@@ -11,6 +11,11 @@ export type Page = components["schemas"]["Page"];
 export type PatchBody = components["schemas"]["PatchBody"];
 export type ErrorBody = components["schemas"]["ErrorBody"];
 export type FieldError = components["schemas"]["FieldError"];
+export type CorrectionOut = components["schemas"]["CorrectionOut"];
+export type Categoria = components["schemas"]["Categoria"];
+export type Prioridad = components["schemas"]["Prioridad"];
+export type Area = components["schemas"]["Area"];
+export type Idioma = components["schemas"]["Idioma"];
 export type ListFilters = NonNullable<
   operations["list_requests_solicitudes_get"]["parameters"]["query"]
 >;

@@ -1,0 +1,130 @@
+/* Plain CSS, no UI kit (Spec 05 §2). */
+
+body {
+  font-family: system-ui, sans-serif;
+  margin: 0;
+  padding: 1.5rem;
+  color: #1a1a1a;
+  background: #fafafa;
+}
+
+h1 {
+  font-size: 1.4rem;
+}
+
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-bottom: 0.75rem;
+  font-size: 0.9rem;
+}
+
+input,
+select,
+textarea {
+  font: inherit;
+  padding: 0.4rem;
+}
+
+button {
+  font: inherit;
+  padding: 0.4rem 0.9rem;
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.key-prompt {
+  max-width: 320px;
+  margin: 4rem auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.filters {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 1rem;
+}
+
+th,
+td {
+  text-align: left;
+  padding: 0.4rem 0.6rem;
+  border-bottom: 1px solid #ddd;
+}
+
+.queue-row {
+  cursor: pointer;
+}
+
+.queue-row:hover {
+  background: #eef2ff;
+}
+
+.pagination {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.badge-mock {
+  display: inline-block;
+  margin-left: 0.5rem;
+  padding: 0.05rem 0.4rem;
+  font-size: 0.7rem;
+  border-radius: 0.75rem;
+  background: #fde68a;
+  color: #713f12;
+}
+
+.form-error {
+  color: #b91c1c;
+}
+
+.field-errors {
+  color: #b91c1c;
+  padding-left: 1.2rem;
+}
+
+.error-box {
+  border: 1px solid #fca5a5;
+  background: #fef2f2;
+  padding: 0.75rem;
+  border-radius: 0.4rem;
+}
+
+.correction-form {
+  max-width: 480px;
+  display: flex;
+  flex-direction: column;
+}
+
+.correction-form .actions {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+
+.message {
+  white-space: pre-wrap;
+  background: #fff;
+  padding: 0.75rem;
+  border-radius: 0.4rem;
+  border: 1px solid #e5e5e5;
+}
+
+.corrections {
+  padding-left: 1.2rem;
+}

@@ -1,4 +1,4 @@
-import { defineConfig } from "vite";
+import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 
 // Dev-only proxy to the API; nginx.conf (Task 2) does the equivalent prefix rewrite in
@@ -13,5 +13,9 @@ export default defineConfig({
         rewrite: (path) => path.replace(/^\/api/, ""),
       },
     },
+  },
+  test: {
+    environment: "jsdom",
+    setupFiles: ["./src/setupTests.ts"],
   },
 });

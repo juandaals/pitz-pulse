@@ -36,5 +36,17 @@ services:
       retries: 5
       start_period: 20s
 
+  # Extra (Spec 05, X5): the review web UI. Under its own profile so a web build failure never
+  # blocks the core `docker compose up` (`docker compose --profile web up`).
+  web:
+    build:
+      context: ./apps/web
+    profiles: [web]
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "${WEB_PORT:-8080}:80"
+
 volumes:
   pitz-data:

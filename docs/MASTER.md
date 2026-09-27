@@ -110,7 +110,7 @@ pitz-pulse/
 | 02 | Service & persistence | Part 2 | `specs/2026-09-25-02-service-persistence-design.md` | `plans/2026-09-27-02-service-persistence-plan.md` (v2, plan gate applied) | implemented and gate-reviewed (PR #2) |
 | 03 | Evaluation, golden sets, iteration | Part 3 | `specs/2026-09-25-03-evaluation-design.md` | `plans/2026-09-27-03-evaluation-plan.md` (v2) | implemented on feat/spec-03-evaluation (rev 5); edge labels approved 2026-09-27 |
 | 04 | 04a delivery · 04b docs | Part 2 (compose) + Part 4 | `specs/2026-09-25-04-delivery-docs-design.md` | `plans/2026-09-27-04-delivery-docs-plan.md` (fast mode) | implemented on feat/spec-04-delivery-docs; final review applied |
-| 05 | Review web UI (extra) | X5 | `specs/2026-09-25-05-review-web-ui-design.md` | pending | draft rev 2 |
+| 05 | Review web UI (extra) | X5 | `specs/2026-09-25-05-review-web-ui-design.md` | `plans/2026-09-27-05-review-web-plan.md` (fast mode) | implemented on feat/spec-05-web |
 | 06 | Extras: CI, compare, duplicates, Slack | X1–X4 | `specs/2026-09-25-06-extras-design.md` | `plans/2026-09-27-06-extras-plan.md` (fast mode) | 06a, 06b implemented (06b: preflight validates every provider/model/temperature before the first classify) |
 
 ```
