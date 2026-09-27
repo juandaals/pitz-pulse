@@ -103,7 +103,7 @@ pitz-pulse/
 | # | Spec | Covers | File | Plan | Status |
 |---|------|--------|------|------|--------|
 | 01 | Classification core | Part 1 | `specs/2026-09-25-01-classification-core-design.md` | pending | implemented and gate-reviewed on `feat/spec-01-classification-core`; real smoke deferred to the Pitz key (D29) |
-| 02 | Service & persistence | Part 2 | `specs/2026-09-25-02-service-persistence-design.md` | pending | rev 5 approved 2026-09-27 (spec gate applied); plan next |
+| 02 | Service & persistence | Part 2 | `specs/2026-09-25-02-service-persistence-design.md` | `plans/2026-09-27-02-service-persistence-plan.md` (v2, plan gate applied) | rev 5.1; plan v2 awaiting candidate approval |
 | 03 | Evaluation, golden sets, iteration | Part 3 | `specs/2026-09-25-03-evaluation-design.md` | pending | draft rev 3 |
 | 04 | 04a delivery · 04b docs | Part 2 (compose) + Part 4 | `specs/2026-09-25-04-delivery-docs-design.md` | pending | draft rev 3 (D29/D30 amendments) |
 | 05 | Review web UI (extra) | X5 | `specs/2026-09-25-05-review-web-ui-design.md` | pending | draft rev 2 |

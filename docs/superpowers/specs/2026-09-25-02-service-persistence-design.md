@@ -6,8 +6,9 @@
   `classifier.build_classifier(settings, adapter=None)` → `Classifier.classify(req)` →
   `ClassifyOutcome(classification, attempts)`, raising `ClassificationError(kind, attempts)` or
   `ClassificationCrash(error_type, attempts)`; `logs.configure_logging` / `log_event`
-- **Status:** draft (rev 5 — spec-gate findings applied, see
-  `docs/superpowers/reviews/2026-09-27-02-spec-review.md`)
+- **Status:** rev 5.1 (plan-gate corrections; rev 5 spec-gate findings applied, see
+  `docs/superpowers/reviews/2026-09-27-02-spec-review.md` and
+  `docs/superpowers/reviews/2026-09-27-02-plan-review.md`)
 - **Decisions used:** D5–D9, D11, D12, D17, D21, D25, D28, D29, D30 (see `docs/MASTER.md`)
 
 ## 1. Goal
@@ -99,9 +100,10 @@ apply a file twice.
 
 `/health`, `/docs`, `/openapi.json` are open (no data, schema only). Everything under `/solicitudes`
 requires `X-API-Key`: read with `APIKeyHeader(auto_error=False)`; missing or wrong → 401;
-compared as bytes with `hmac.compare_digest` (a non-ASCII header must be a 401, not a 500). FastAPI
-validates the body before dependencies, so an unauthenticated request with a malformed body gets
-422 — documented, no data is exposed.
+compared as bytes with `hmac.compare_digest` (a non-ASCII header must be a 401, not a 500). On
+FastAPI 0.141 authentication runs before body validation: without a valid key, a JSON body that
+fails validation gets 401; only a body that is not valid JSON gets 422 (it fails while the body is
+read, before dependencies) — documented, no data is exposed.
 
 | Method | Path | Success | Errors |
 |---|---|---|---|
@@ -121,7 +123,7 @@ validates the body before dependencies, so an unauthenticated request with a mal
 | 409 | `id_conflict` · `in_progress` · `not_classified` | `in_progress` carries `Retry-After` = seconds until the row becomes stale |
 | 422 | `validation_error` | `fields: [{loc, msg}]`; cross-field contract rules use `loc: ["body"]` |
 | 500 | `internal_error` | constant `detail` |
-| 502 | `classification_failed` | `kind`: `llm_unavailable \| llm_rejected \| invalid_output` |
+| 502 | `classification_failed` | `kind`: the row's failure kind — `llm_unavailable \| llm_rejected \| invalid_output`, or `internal_error \| busy` when a lost claim reports another request's failure |
 | 503 | `busy` · `db_busy` | `Retry-After`: 30 (`busy`), 1 (`db_busy`) |
 
 **POST body:** `{id, message, source_area?}` (limits in Spec 01 §2). Unknown fields → 422. Text
@@ -153,10 +155,10 @@ original; `corrected = true` means the current values are (partly) human.
 real key was added). Mock rows are not re-classified automatically (that would break "no second
 model call"); the README says to `make down -v` to start clean.
 
-**GET filters** (`ListQuery`, `extra="forbid"`: unknown params such as `?area=` → 422 naming the
-allowed ones): `categoria`, `prioridad`, `area_sugerida`, `needs_review`, `status` (no default: all
-statuses); `limit` 1–100 (default 20), `offset` 0–2³¹−1; order `created_at DESC, id ASC`; filters
-apply to current values (G12). Invalid enum → 422. Offset past the end → empty `items`, real
+**GET filters** (`ListQuery`, `extra="forbid"`: unknown params such as `?area=` → 422 with
+`loc: ["query", <name>]`): `categoria`, `prioridad`, `area_sugerida`, `needs_review`, `status`
+(no default: all statuses); `limit` 1–100 (default 20), `offset` 0–2³¹−1; order
+`created_at DESC, id ASC`; filters apply to current values (G12). Invalid enum → 422. Offset past the end → empty `items`, real
 `total`.
 
 **PATCH body** (`PatchBody`, strict types — `"yes"` is not a bool): any subset of correctable
