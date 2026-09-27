@@ -3,7 +3,8 @@
 - **Covers:** X2, X4, X3, X1 (build order: cheapest and most valuable first)
 - **Depends on:** Parts 1–4 verified. Each extra is independent; anything not built goes to README
   "pending" with the plan below.
-- **Status:** draft (rev 2 — review findings applied)
+- **Status:** 06a (CI) and 06b (comparison tooling, no paid rows under D29) implemented on
+  feat/spec-06-extras; 06c and 06d not started
 
 ---
 

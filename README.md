@@ -185,7 +185,8 @@ that contained an email address:
 | `POST /solicitudes/` (trailing slash) redirects with 307 | Starlette default | Use the exact path |
 | Live acceptance of the strict tool schema and the Agent SDK path | No real call in development (D29) | The first real call (section 3) |
 | `AI_LOG.md` | Written by the candidate | — |
-| Extras (web UI, CI, model comparison, duplicates, Slack) | Parts 1–4 first | Specs 05–06 |
+| Extras: review web UI, duplicate detection, Slack | Parts 1–4, CI and model comparison first | Specs 05, 06c, 06d |
+| Measured model comparison (`make compare-models`) | Needs paid runs (D29) | Run it with Pitz's key; the table and the command exist |
 
 ## 10. Documentation map
 
