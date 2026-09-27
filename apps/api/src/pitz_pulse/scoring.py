@@ -47,6 +47,13 @@ def _ratio(correct: int, total: int) -> str:
     return f"{correct}/{total} ({round(100 * correct / total)}%)"
 
 
+def _fmt(value: object) -> str:
+    """JSON-style `true`/`false` for booleans; plain `str()` otherwise (enums render as-is)."""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return str(value)
+
+
 @dataclass(frozen=True)
 class EvalReport:
     scored: int
@@ -109,6 +116,14 @@ class EvalReport:
             rate = _ratio(row.wrong_caught, row.wrong_total)
             lines.append(f"| {row.threshold:.2f} | {row.routed} | {caught} | {rate} |")
 
+        confidences = [conf for _, conf, _ in self.per_message_confidence]
+        if confidences and all(c == confidences[0] for c in confidences):
+            lines += [
+                "",
+                "Degenerate: all confianza values are equal; the sweep carries no "
+                "calibration signal.",
+            ]
+
         return "\n".join(lines) + "\n"
 
 
@@ -131,7 +146,7 @@ def score(labels: list[Label], results: list[ClassificationShape], threshold: fl
         if result is None:
             missing_ids.append(label.id)
             for name in SCORED_FIELDS:
-                failures.append(Failure(label.id, name, str(getattr(label, name)), MISSING, None))
+                failures.append(Failure(label.id, name, _fmt(getattr(label, name)), MISSING, None))
             continue
         all_correct = True
         for name in SCORED_FIELDS:
@@ -140,7 +155,9 @@ def score(labels: list[Label], results: list[ClassificationShape], threshold: fl
                 field_correct[name] += 1
             else:
                 all_correct = False
-                failures.append(Failure(label.id, name, str(expected), str(got), result.confianza))
+                failures.append(
+                    Failure(label.id, name, _fmt(expected), _fmt(got), result.confianza)
+                )
         if all_correct:
             exact_correct += 1
         per_message_confidence.append((label.id, result.confianza, all_correct))

@@ -16,7 +16,7 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from pitz_pulse.config import ACTIVE_PROMPT_VERSION, DEFAULT_APP_ROOT, DEFAULT_MODEL
+from pitz_pulse.config import ACTIVE_PROMPT_VERSION, DEFAULT_MODEL, resolve_app_root
 from pitz_pulse.evaluate import RunMeta, load_run
 from pitz_pulse.models_catalog import ANTHROPIC_API, CLAUDE_AGENT_SDK, MOCK, lookup
 from pitz_pulse.prompts import PromptError, load_prompt
@@ -27,6 +27,7 @@ from pitz_pulse.runs import (
     canonical_sha256,
     load_requests,
     repo_root,
+    run_paths,
     run_stem,
     sha256_hex,
     write_pair,
@@ -107,6 +108,19 @@ def _check_prompt(app_root: Path, meta: RunMeta) -> None:
         raise RunError(f"meta.prompt_sha256 does not match prompts/{meta.prompt_version}.md")
 
 
+def verify(app_root: Path, stem: str, allow_mock: bool) -> RunMeta:
+    """Every promotion check (provider, contents, prompt), without writing.
+
+    Used by `main` and by tests that confirm a committed run still validates against the
+    current prompt, tool schema and input file.
+    """
+    _run_bytes, results, meta = load_run(app_root, stem)
+    _check_provider(meta, allow_mock, results)
+    _check_contents(app_root, stem, results, meta)
+    _check_prompt(app_root, meta)
+    return meta
+
+
 def _existing_is_mock(meta_path: Path, results_path: Path) -> bool:
     """Anything but a readable meta with `mock` exactly true counts as a real result.
 
@@ -143,11 +157,10 @@ def main(argv: list[str] | None = None, env: Mapping[str, str] | None = None) ->
         return int(exc.code or 0)
 
     try:
-        app_root = Path(env.get("APP_ROOT") or DEFAULT_APP_ROOT).resolve()
-        run_bytes, results, meta = load_run(app_root, args.stem)
-        _check_provider(meta, args.allow_mock, results)
-        _check_contents(app_root, args.stem, results, meta)
-        _check_prompt(app_root, meta)
+        app_root = resolve_app_root(env)
+        meta = verify(app_root, args.stem, args.allow_mock)
+        run_path, _meta_path = run_paths(app_root, args.stem)
+        run_bytes = run_path.read_bytes()
         root = repo_root(app_root)
         results_path, meta_path = root / RESULTS_FILE, root / RESULTS_META_FILE
         is_mock = meta.provider == MOCK

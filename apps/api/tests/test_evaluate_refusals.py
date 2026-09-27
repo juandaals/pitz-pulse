@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from evaluate_support import DROP, RESULT_FIELDS, build_fixture, run_eval
 
 from pitz_pulse.runs import run_paths
@@ -229,6 +231,30 @@ def test_threshold_above_one_exits_two(tmp_path, capsys):
     assert code == 2
     assert out.out == ""
     assert "threshold" in out.err
+
+
+def test_label_file_unreadable_after_loading_exits_two_without_traceback(
+    tmp_path, monkeypatch, capsys
+):
+    """Simulates the label file vanishing between `load_labels` and the header's own re-read."""
+    app_root, stem = build_fixture(tmp_path)
+    label_path = tmp_path / "etiquetas_esperadas.json"
+    original_read_bytes = Path.read_bytes
+
+    def flaky_read_bytes(self):
+        if self == label_path:
+            raise OSError("simulated read failure")
+        return original_read_bytes(self)
+
+    monkeypatch.setattr(Path, "read_bytes", flaky_read_bytes)
+
+    code = run_eval(app_root, ["--run", stem])
+
+    out = capsys.readouterr()
+    assert code == 2
+    assert out.out == ""
+    assert "Traceback" not in out.err
+    assert "etiquetas_esperadas.json" in out.err
 
 
 def test_compare_across_different_sets_exits_two(tmp_path, capsys):

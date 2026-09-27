@@ -15,14 +15,13 @@ from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field, StrictInt, ValidationError
 
-from pitz_pulse.config import DEFAULT_APP_ROOT
-from pitz_pulse.labels import LABEL_FILES, Label, LabelError, load_labels
+from pitz_pulse.config import DEFAULT_CONFIDENCE_THRESHOLD, resolve_app_root
+from pitz_pulse.labels import LABEL_FILES, SCORED_FIELDS, Label, LabelError, load_labels
 from pitz_pulse.runs import SETS, RunError, item_label, repo_root, run_paths, sha256_hex
 from pitz_pulse.schema import ClassificationShape
 from pitz_pulse.scoring import EvalReport, compare_runs, score
 
 MOCK_HEADER = "# MOCK RUN — NOT MODEL QUALITY"
-DEFAULT_THRESHOLD = 0.7
 
 
 class RunMeta(BaseModel):
@@ -131,7 +130,7 @@ def _resolve(
 def _threshold(raw: str | None, env: Mapping[str, str]) -> float:
     text = raw if raw is not None else env.get("CONFIDENCE_THRESHOLD")
     if text is None or not text.strip():
-        return DEFAULT_THRESHOLD
+        return DEFAULT_CONFIDENCE_THRESHOLD
     try:
         value = float(text)
     except ValueError:
@@ -148,6 +147,7 @@ def _sha_prefix(value: str | None) -> str:
 def _diff_section(compare_stem, meta, other, results, other_results) -> str:
     prompt_a, prompt_b = _sha_prefix(meta.prompt_sha256), _sha_prefix(other.prompt_sha256)
     tool_a, tool_b = _sha_prefix(meta.tool_schema_sha256), _sha_prefix(other.tool_schema_sha256)
+    diffs = compare_runs(results, other_results)
     lines = [
         f"### Diff vs {compare_stem}",
         "| field | this run | other run |",
@@ -159,14 +159,29 @@ def _diff_section(compare_stem, meta, other, results, other_results) -> str:
         "| id | field | this run | other run |",
         "| --- | --- | --- | --- |",
     ]
-    for diff in compare_runs(results, other_results):
+    for diff in diffs:
         lines.append(f"| {diff.id} | {diff.field} | {diff.a} | {diff.b} |")
+    lines += [
+        "",
+        "#### Noise floor (ids flipped per field)",
+        "| field | ids flipped |",
+        "| --- | --- |",
+    ]
+    for name in SCORED_FIELDS:
+        flipped = sum(1 for diff in diffs if diff.field == name)
+        lines.append(f"| {name} | {flipped} |")
     return "\n".join(lines)
 
 
-def _header(stem: str, meta: RunMeta, label_path: Path, report: EvalReport) -> str:
+def _label_sha(label_path: Path) -> str:
+    try:
+        return sha256_hex(label_path.read_bytes())[:12]
+    except OSError as exc:
+        raise RunError(f"could not read {label_path.name} ({type(exc).__name__})") from None
+
+
+def _header(stem: str, meta: RunMeta, label_sha: str, report: EvalReport) -> str:
     temperature = "none" if meta.temperature is None else meta.temperature
-    label_sha = sha256_hex(label_path.read_bytes())[:12]
     return (
         f"set {meta.set} · run {stem} · provider {meta.provider} · model {meta.model} · "
         f"temperature {temperature} · labels {label_sha} · {report.scored} scored"
@@ -195,9 +210,10 @@ def main(argv: list[str] | None = None, env: Mapping[str, str] | None = None) ->
 
     try:
         threshold = _threshold(args.threshold, env)
-        app_root = Path(env.get("APP_ROOT") or DEFAULT_APP_ROOT).resolve()
+        app_root = resolve_app_root(env)
         results, meta, labels, label_path = _resolve(app_root, args.stem)
         report = score(labels, results, threshold)
+        label_sha = _label_sha(label_path)
         diff_section = None
         if args.compare_stem:
             other_results, other_meta, _other_labels, _other_label_path = _resolve(
@@ -214,7 +230,7 @@ def main(argv: list[str] | None = None, env: Mapping[str, str] | None = None) ->
     output = []
     if meta.provider == "mock":
         output.append(MOCK_HEADER)
-    output.append(report.to_markdown(_header(args.stem, meta, label_path, report)).rstrip("\n"))
+    output.append(report.to_markdown(_header(args.stem, meta, label_sha, report)).rstrip("\n"))
     if diff_section:
         output.append(diff_section)
     print("\n\n".join(output))

@@ -116,6 +116,12 @@ def _leaks(message: str, text: str) -> bool:
     return bool(size) and bool(_shingles(words, size) & _shingles(_words(text), size))
 
 
+def _leaked_ids(pairs: list[tuple[str, str]], texts: list[str]) -> list[str]:
+    """The ids of golden messages that leak into any of `texts`; used by both leak tests so
+    a real failure and its "no-print" regression test share exactly one code path."""
+    return [mid for mid, msg in pairs for text in texts if _leaks(msg, text)]
+
+
 def test_no_golden_message_leaks_into_prompts_or_tool_schema():
     from pitz_pulse.tool_schema import build_tool_schema
 
@@ -125,7 +131,7 @@ def test_no_golden_message_leaks_into_prompts_or_tool_schema():
     assert len(pairs) >= 12 and len(texts) >= 2  # never pass vacuously on missing files
     # Collect first, assert on the id list: `assert not _leaks(...)` would let pytest's
     # assertion introspection print the golden message text alongside the prompt text.
-    leaked = [mid for mid, msg in pairs for text in texts if _leaks(msg, text)]
+    leaked = _leaked_ids(pairs, texts)
     assert not leaked, leaked
 
 
@@ -140,7 +146,7 @@ def test_leak_failure_output_names_ids_only():
     pairs = [("FAKE-ID-01", secret_message)]
     texts = [f"Example: {secret_message.lower()} -> bug"]
     with pytest.raises(AssertionError) as info:
-        leaked = [mid for mid, msg in pairs for text in texts if _leaks(msg, text)]
+        leaked = _leaked_ids(pairs, texts)
         assert not leaked, leaked
     output = str(info.value)
     assert "FAKE-ID-01" in output

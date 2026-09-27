@@ -171,6 +171,38 @@ def test_sweep_zero_wrong_has_na_catch_rate_in_markdown():
     assert "| 0.70 | 0 | n/a | n/a |" in md
 
 
+def test_boolean_failure_values_render_json_style():
+    labels = [make_label("EX-1", requiere_info=True)]
+    results = [make_result("EX-1", requiere_info=False)]
+
+    report = score(labels, results, threshold=0.7)
+
+    failure = next(f for f in report.failures if f.field == "requiere_info")
+    assert (failure.expected, failure.got) == ("true", "false")
+
+
+def test_degenerate_confidence_prints_warning_line():
+    labels = [make_label("EX-1"), make_label("EX-2")]
+    results = [make_result("EX-1", confianza=0.5), make_result("EX-2", confianza=0.5)]
+
+    report = score(labels, results, threshold=0.7)
+    md = report.to_markdown("set case · 2 scored")
+
+    assert (
+        "Degenerate: all confianza values are equal; the sweep carries no calibration signal." in md
+    )
+
+
+def test_varied_confidence_has_no_degenerate_line():
+    labels = [make_label("EX-1"), make_label("EX-2")]
+    results = [make_result("EX-1", confianza=0.5), make_result("EX-2", confianza=0.9)]
+
+    report = score(labels, results, threshold=0.7)
+    md = report.to_markdown("set case · 2 scored")
+
+    assert "Degenerate" not in md
+
+
 def test_compare_runs_reports_changed_field_and_significant_confidence_delta():
     a = [make_result("EX-1", prioridad="alta", confianza=0.90)]
     b = [make_result("EX-1", prioridad="baja", confianza=0.80)]

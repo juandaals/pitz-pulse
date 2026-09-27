@@ -184,6 +184,15 @@ def test_real_over_real_result_needs_no_force(tmp_path):
     assert run_promote(app_root, ["--run", BASELINE_STEM]) == 0
 
 
+def test_app_root_with_surrounding_whitespace_is_stripped(tmp_path, capsys):
+    app_root = build_repo(tmp_path)
+    write_run(app_root)
+
+    code = promote.main(["--run", BASELINE_STEM], env={"APP_ROOT": f"  {app_root}  \n"})
+
+    assert code == 0, capsys.readouterr().err
+
+
 def test_missing_meta_with_existing_results_needs_force(mock_run, capsys):
     assert run_promote(mock_run, ["--run", MOCK_STEM, "--allow-mock"]) == 0
     results_path, meta_path = outputs(mock_run)

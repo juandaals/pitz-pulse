@@ -5,7 +5,12 @@ import os
 import pytest
 from conftest import TRACING_VARS
 
-from pitz_pulse.config import ConfigError, disable_tracing, parse_llm_settings
+from pitz_pulse.config import (
+    DEFAULT_CONFIDENCE_THRESHOLD,
+    ConfigError,
+    disable_tracing,
+    parse_llm_settings,
+)
 
 
 @pytest.fixture
@@ -144,6 +149,11 @@ def test_unknown_model_or_provider(app_root):
 def test_ranges(app_root, name, value):
     with pytest.raises(ConfigError, match=name):
         settings(app_root, **{name: value})
+
+
+def test_confidence_threshold_default_has_one_source(app_root):
+    assert DEFAULT_CONFIDENCE_THRESHOLD == 0.7
+    assert settings(app_root).confidence_threshold == DEFAULT_CONFIDENCE_THRESHOLD
 
 
 def test_prompt_version_format_and_file(app_root):
