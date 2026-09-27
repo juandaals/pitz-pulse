@@ -49,7 +49,7 @@ Every error has the shape `{error, detail}`; see `docs/superpowers/specs/2026-09
 |---|---|---|
 | `mock` | none | Deterministic keyword rules. For development and tests only; never model quality. |
 | `anthropic_api` | `ANTHROPIC_API_KEY` | Claude Messages API (`claude-haiku-4-5` by default, temperature 0). The only provider whose runs can become the official `resultados.json`. |
-| `claude_agent_sdk` | `CLAUDE_CODE_OAUTH_TOKEN` | Claude Agent SDK as a single-turn transport. It cannot set temperature, so its runs are never promoted. |
+| `claude_agent_sdk` | `CLAUDE_CODE_OAUTH_TOKEN` | Claude Agent SDK as a single-turn transport. It cannot set temperature, so it needs `LLM_TEMPERATURE=none` (the service refuses to start otherwise) and its runs are never promoted. |
 
 LangGraph is always the harness (`call_llm → validate → retry`); providers are only transports.
 With no `LLM_PROVIDER` set, the provider is chosen from the one credential present, or mock when
