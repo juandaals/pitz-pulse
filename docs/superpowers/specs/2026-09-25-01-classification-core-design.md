@@ -505,4 +505,4 @@ empty env. A sentinel string is used to prove text never reaches logs.
 `make test` green · `make lint` clean · every source file < 300 lines · mock batch writes a run +
 meta under `eval/runs/` · one **announced** real call per available real provider using a synthetic
 smoke message (never an `MSG-xx` message) proves the live API accepts the tool schema /
-plain-JSON reply.
+plain-JSON reply. Per D29 this call is not made during development: it runs when the real integration is activated with Pitz's key (README).
