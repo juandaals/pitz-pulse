@@ -108,7 +108,7 @@ pitz-pulse/
 |---|------|--------|------|------|--------|
 | 01 | Classification core | Part 1 | `specs/2026-09-25-01-classification-core-design.md` | pending | implemented and gate-reviewed on `feat/spec-01-classification-core`; real smoke deferred to the Pitz key (D29) |
 | 02 | Service & persistence | Part 2 | `specs/2026-09-25-02-service-persistence-design.md` | `plans/2026-09-27-02-service-persistence-plan.md` (v2, plan gate applied) | implemented on feat/spec-02-service-persistence; implementation gate next |
-| 03 | Evaluation, golden sets, iteration | Part 3 | `specs/2026-09-25-03-evaluation-design.md` | pending | draft rev 3 |
+| 03 | Evaluation, golden sets, iteration | Part 3 | `specs/2026-09-25-03-evaluation-design.md` | pending | rev 5 (spec gate applied); plan next |
 | 04 | 04a delivery · 04b docs | Part 2 (compose) + Part 4 | `specs/2026-09-25-04-delivery-docs-design.md` | pending | draft rev 3 (D29/D30 amendments) |
 | 05 | Review web UI (extra) | X5 | `specs/2026-09-25-05-review-web-ui-design.md` | pending | draft rev 2 |
 | 06 | Extras: CI, compare, duplicates, Slack | X1–X4 | `specs/2026-09-25-06-extras-design.md` | pending | draft rev 2 |
@@ -182,18 +182,18 @@ show real output → propose commit(s) → candidate approves.
 | D9 | DB stores original text; only the LLM egress is masked; logs never contain text | Reviewers need the full text; DB is internal; residual risk documented | approved |
 | D10 | Masking: email, CNPJ (numeric + 2026 alphanumeric), CPF, CURP, RFC, phones BR/MX | Case minimum + personal IDs of both countries (LGPD / LFPDPPP) | approved |
 | D11 | Request fields in English: `id`, `message`, `source_area` | Candidate rule | approved |
-| D12 | `confianza` < `CONFIDENCE_THRESHOLD` → `needs_review`; queue filter; threshold chosen from the eval sweep | Measurable product use of confidence | approved |
+| D12 | `confianza` < `CONFIDENCE_THRESHOLD` → `needs_review`; queue filter; threshold chosen from the eval sweep (placeholder 0.7 until a real run, G35) | Measurable product use of confidence | approved |
 | D13 | Monorepo `apps/api` + `apps/web`; web after Parts 1–4 | Candidate requirement + case priority | approved |
 | D14 | No golden message is ever used as a prompt example (tested) | Leaking eval data inflates accuracy | approved |
 | D15 | `version_prompt` set by code from the prompt file | Model could hallucinate it | approved |
 | D16 | `pregunta_seguimiento` in the message language; `resumen` always Spanish | Candidate decision; case mandates Spanish only for `resumen` | approved |
 | D17 | Endpoint path stays `/solicitudes` | Case contract; evaluators test that path | approved |
 | D18 | Providers as Strategy/Adapter (`anthropic_api` API key · `claude_agent_sdk` OAuth token · `mock`), factory + registry, model catalog with capabilities and prices | Swap providers by config; capabilities differ per model. Builder rejected (one-step construction). Candidate asserts the OAuth path works; validated at the first real run | approved |
-| D19 | Batch writes only `eval/runs/`; `make promote` is the only writer of `resultados.json` (+ meta), refuses mock | Prevents mock/compare runs from overwriting the deliverable | approved |
-| D20 | Two model-agnostic golden sets: case (candidate labels) + edge (assistant-drafted messages, candidate-approved labels) | Regression guard against overfitting 12 messages | approved |
+| D19 | Batch writes only `eval/runs/`; `make promote` is the only writer of `resultados.json` (+ meta), refuses mock unless `--allow-mock` (D31) | Prevents mock/compare runs from overwriting the deliverable | approved |
+| D20 | Two model-agnostic golden sets: case (assistant-drafted, candidate-approved labels) + edge (assistant-drafted messages, candidate-approved labels) | Regression guard against overfitting 12 messages | approved |
 | D21 | Config split: `LLMSettings` (batch/eval/API) and `ApiSettings` (API only: `API_KEY`, `DB_PATH`, `PENDING_STALE_SECONDS`); `ApiSettings` **composes** `LLMSettings` (`settings.llm`), never inherits or serializes it | CLIs must not require the HTTP API key; inheritance + `asdict` would copy secrets and re-run catalog checks | approved |
 | D22 | Web served by nginx proxying `/api` → api (no CORS); compose profile `web` | One origin; web failure never blocks the core stack | approved |
-| D23 | Official `resultados.json` only from `anthropic_api` at temperature 0; promote also enforces set = case, the 12 ids, no failures, hashes and full contract | Case requires temperature 0; the Agent SDK cannot set it. Agent SDK = development provider | approved |
+| D23 | Official `resultados.json` only from `anthropic_api` at temperature 0 (mock only with `--allow-mock`, D31); promote also enforces set = case, the 12 ids, no failures, hashes and full contract | Case requires temperature 0; the Agent SDK cannot set it. Agent SDK = development provider | approved |
 | D24 | Agent SDK adapter uses `claude-agent-sdk` directly (no LangChain wrapper), plain-JSON reply validated by the graph, full isolation options, explicit subprocess env, deadline budget (checked between attempts; see D28), concurrency semaphore | The SDK has no forced tool choice and `output_format` hides a retry loop (conflicts with D4); wrappers lack isolation options | approved |
 | D25 | Provider unset + exactly one credential → that provider (logged); mock responses carry `X-Pitz-Provider: mock` | Evaluators who only set their key must not silently get mock output | approved |
 | D26 | Run stems include the golden set; no overwrite without `FORCE`; meta carries prompt/input/results hashes; `eval/runs/` committed after every real run | Evidence for the README iteration story cannot be silently destroyed or mismatched | approved |
@@ -202,6 +202,7 @@ show real output → propose commit(s) → candidate approves.
 | D28 | Spec 01 implementation-gate rulings: (a) the per-invoke deadline is a best-effort budget checked between attempts; an in-flight Anthropic attempt is bounded only by the httpx per-phase timeouts and Spec 02's claim token is the safety net; (b) the batch stops only on credential rejections (401/403, `authentication_failed`, `billing_error`, CLI not found) — other `llm_rejected` items are recorded and the batch continues; (c) run meta records `tool_schema_sha256` (Spec 03 promote check deferred to Spec 03); (d) masking strips Unicode `Cf` before NFKC and keeps prompt-only over-masking (`número`, keyword + year list, separated alphanumeric codes as `[CNPJ]`, area-coded `NNNN-NNNN` without a keyword); the exact CPF shape wins over the IPv4 guard; (e) a bare `Exception` from the Agent SDK query maps to `unavailable` / `SDKControlError`; (f) `tool_schema_sha256` is null when the provider does not send the tool | (a) a wall-clock kill of an in-flight httpx call needs threads the plan removed on purpose — cost: one attempt can overrun by up to one per-phase timeout; (b) one oversized edge message must not kill a 12+N run — cost: a systemic 400 runs the whole set (4xx are not billed) and the all-rejected summary names the error types; (c) tool descriptions carry rubric text outside `prompt_sha256`; (d) D14 | approved |
 | D29 | The assistant makes no real model call and uses no personal key. `.env` defaults to `LLM_PROVIDER=anthropic_api` with an empty `ANTHROPIC_API_KEY` (fails fast with `ConfigError`, never silent mock); `LLM_PROVIDER=mock` is the development/test provider (same graph, contract validation and error types; no external calls). README explains how to activate the real integration with Pitz's key; live acceptance of the strict tool schema (G23, Spec 01 §12) is verified by whoever runs it with that key | Candidate decision 2026-09-27: no spend on personal credentials | approved |
 | D30 | Spec 02 spec-gate rulings: zero-arg `create_app()` factory (uvicorn `--factory`); one app-scoped `TriageService` owning the model-slot semaphore (≤ 2× waiters, 30 s, then 503 `busy`), per-call connections with `check_same_thread=False`; `repository.transaction()` always rolls back; migrations split statements (no `executescript`); rows store `provider`/`model` and the mock header also marks stored mock rows (no auto re-classification); lost claim answers with the current row state, never 201; `complete` retried on lock; `needs_review` computed on read from a `reviewed` flag and a shared `review.needs_review`; `PENDING_STALE_SECONDS` defaults to the derived minimum; catch-all middleware logs class names only and never re-raises; unknown query params → 422; exact error-code table; `/health` async (exception to D5); `.env.example` sets `LLM_PROVIDER=anthropic_api` with an empty key while no `.env` still auto-selects mock (D29 scope) | Each closes a verified defect or contradiction from `docs/superpowers/reviews/2026-09-27-02-spec-review.md` | approved |
+| D31 | `resultados.json` is produced from a **mock** case run via `promote --allow-mock` (meta `mock: true`); `claude_agent_sdk` stays non-promotable; the README gives the exact commands to regenerate it and to run the real v1 → v2 iteration with Pitz's key; no v2 prompt is written from mock results. Edge-set labels are drafted by the assistant and approved by the candidate at the end of Spec 03 | D29 forbids real calls; the deliverable must exist and be honest about its provenance | approved |
 
 ## 8. Gaps, edge cases and contradictions register
 
@@ -227,7 +228,7 @@ show real output → propose commit(s) → candidate approves.
 | G18 | Prompt injection / delimiter break-out | risk | Delimiters + escaping + data instruction | 01 |
 | G19 | Temperature 0 not fully deterministic | risk | Noise floor from repeated run | 03 |
 | G20 | 12 labels → overfitting | risk | Edge golden set; future set from corrections | 03 |
-| G21 | Mock output mistaken for model output | risk | Meta provider; mock header; promote refuses | 03 |
+| G21 | Mock output mistaken for model output | risk | Meta provider; mock header; promote refuses mock unless `--allow-mock` (D31) | 03 |
 | G22 | Compose must run without `.env` | edge case | `${VAR:-default}` → mock + dev key | 04a |
 | G23 | Strict tool schema rejects min/max/length keywords (every call would 400) | feasibility | `build_tool_schema` strips them; test + real smoke call | 01 |
 | G24 | Stale re-claim lets a late worker overwrite a newer result | edge case | Claim token guard on complete/fail | 02 |
@@ -241,12 +242,13 @@ show real output → propose commit(s) → candidate approves.
 | G32 | Agent SDK CLI inherits env and persists transcripts | risk | Explicit env, persistence off, isolation options tested | 01 |
 | G33 | No hard per-invoke deadline (uncapped retry-after, CLI defaults) | edge case | Deadline budget in every adapter, checked between attempts (in-flight attempt bounded by per-phase timeouts, D28); Spec 02 stale window + claim token cover overruns | 01, 02 |
 | G34 | Masking missed common real formats and over-masked dates/IPs/amounts | edge case | Widened patterns + guards + fixtures (Spec 01 §8.6) | 01 |
+| G35 | No real run under D29: no measured prompt iteration (R3.3), no sweep-derived threshold (D12), no calibration evidence (R1.10) | gap | Tooling + README commands for Pitz's key; 0.7 disclosed as placeholder; mock sweep never shown as evidence | 03, 04b |
 
 ## 9. Open items (blocking)
 
 1. ~~`etiquetas_esperadas.json`~~ approved 2026-09-25 (AI-drafted, candidate-approved; disclosed in README/AI_LOG).
-2. Edge-set labels drafted in Spec 03 and approved by the candidate before the first edge run.
-3. No real key in this repo's development (D29). Real runs (smoke, official `resultados.json`, D23) need Pitz's `ANTHROPIC_API_KEY`; how `resultados.json` is produced without a real run is to be decided before Spec 03.
+2. Edge-set labels drafted in Spec 03 and approved by the candidate at the end of Spec 03 (D31); earlier edge runs score nothing.
+3. No real key in this repo's development (D29). `resultados.json` comes from a marked mock run (D31); real runs need Pitz's `ANTHROPIC_API_KEY`.
 
 ## 10. Delivery checklist (maps to the case deliverables)
 

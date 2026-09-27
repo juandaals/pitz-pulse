@@ -1,10 +1,20 @@
 # Spec 03 — Evaluation, golden sets & prompt iteration
 
-- **Covers:** R3.1–R3.3, R1.9 (promotion to `resultados.json`), R1.10 (calibration evidence)
-- **Depends on:** Spec 01 (batch, run files), Spec 04a (Makefile), candidate-approved labels,
-  a real provider credential
-- **Status:** draft (rev 3 — aligned with Spec 01 rev 3; D23 promote rules)
-- **Decisions used:** D12, D14, D15, D19, D20 (see `docs/MASTER.md`)
+- **Covers:** R3.1, R3.2, R1.9 (promotion to `resultados.json`); tooling for R3.3 and R1.10 —
+  their evidence (a measured v1 → v2 iteration, a sweep-derived threshold) is **blocked on a real
+  run with Pitz's key** (G35)
+- **Depends on:** Spec 01 as built (`python -m pitz_pulse.batch --set case|edge [--suffix]
+  [--force]`, run files + meta with `results_sha256`, `input_sha256`, `prompt_sha256`,
+  `tool_schema_sha256`, `runs.run_paths/canonical_sha256`), Spec 02 (`review.needs_review`),
+  candidate-approved labels. Spec 04a wraps the CLIs below in `make` targets.
+- **Status:** draft (rev 5 — spec-gate findings applied, see
+  `docs/superpowers/reviews/2026-09-27-03-spec-review.md`)
+- **Decisions used:** D12, D14, D15, D19, D20, D23, D29, D31 (see `docs/MASTER.md`)
+
+> **No real model calls in development (D29).** Every tool here is built and tested with the mock
+> provider. `resultados.json` is produced from a mock run with the explicit `--allow-mock` flag
+> (D31) and says so in its meta; the README gives the exact commands to regenerate it — and to run
+> the v1 → v2 iteration with real numbers — with Pitz's key.
 
 ## 1. Goal
 
@@ -15,17 +25,23 @@ whether `confianza` predicts failure, and whether a prompt change helped.
 
 | Set | Messages | Labels | Author |
 |---|---|---|---|
-| `case` | `/mensajes.json` (the 12 case messages) | `/etiquetas_esperadas.json` | candidate, written **before** the first real run |
+| `case` | `/mensajes.json` (the 12 case messages) | `/etiquetas_esperadas.json` | drafted by the assistant at the candidate's request, approved by the candidate 2026-09-25 (disclosed in README/AI_LOG) |
 | `edge` | `apps/api/eval/golden/edge_cases.messages.json` | `apps/api/eval/golden/edge_cases.labels.json` | messages drafted by the assistant; labels proposed as `draft`, each approved or changed by the candidate |
 
 Golden files contain only input and truth — never a model, provider or prompt version. Any run
 from any provider/model/prompt is scored against the same files. No golden message is ever used
 as a prompt example (D14).
 
-Edge set (15–20 messages) covers: each PII type, prompt injection, mixed ES/PT, a third language,
-very vague, two requests in one message, maximum-length message, emoji/Slack markup, explicit
-urgency words without real impact, real impact without urgency words. It also mitigates G20
-(tuning to 12 messages): a prompt change must not regress the edge set.
+Edge set (15–20 messages) covers: each PII type, prompt injection, mixed ES/PT, very vague, two
+requests in one message, a long message (within Spec 01 limits: ≤ 4000 characters stripped,
+≤ 8000 raw, so `runs.load_requests` accepts the file), emoji/Slack markup, explicit urgency words
+without real impact, real impact without urgency words. A third language is left out: the
+contract's `idioma` only admits `es`/`pt`, so no label could be right. It also mitigates G20
+(tuning to 12 messages): a prompt change must not regress the edge set. It is drafted by the same
+assistant that wrote v1, so it is a regression guard, not an independent benchmark.
+
+Edge labels are `draft` until the candidate approves them at the end of Spec 03 (D31); runs made
+before that report every edge item as not scored.
 
 ## 3. Label file format
 
@@ -55,9 +71,10 @@ iff `requiere_info`.
 
 | File | Responsibility |
 |---|---|
-| `apps/api/src/pitz_pulse/evaluate.py` | CLI: load + validate, call `scoring`, print Markdown; exit codes |
+| `apps/api/src/pitz_pulse/evaluate.py` | CLI `python -m pitz_pulse.evaluate --run <stem> [--compare <stem>] [--threshold T]`: load + validate, call `scoring`, print Markdown; exit codes |
 | `apps/api/src/pitz_pulse/scoring.py` | Pure functions: `score(labels, results, threshold)`, `compare_runs(a, b)`, `threshold_sweep`; "routed to review" uses Spec 02's `review.needs_review` (strict `<`) |
-| `apps/api/src/pitz_pulse/promote.py` | `promote(stem)`: verify (below), then write `/resultados.meta.json` then `/resultados.json` (atomic, meta first) |
+| `apps/api/src/pitz_pulse/promote.py` | CLI `python -m pitz_pulse.promote --run <stem> [--allow-mock]`: verify (below), then write `/resultados.meta.json` then `/resultados.json` (atomic, meta first) |
+| `apps/api/src/pitz_pulse/labels.py` | `Label` model and `load_labels(path)` (shared by evaluate and the golden-file tests) |
 | `apps/api/eval/runs/` | Run files from Spec 01 batch (`<set>__<prompt>__<provider>__<model>[__<suffix>].json` + `.meta.json`), committed after every real run (D26) |
 | `apps/api/prompts/CHANGELOG.md` | Per version: change, hypothesis, eval before → after, stability note |
 
@@ -68,11 +85,14 @@ No new dependencies.
 ```
 make classify SET=case|edge [SUFFIX=b] [FORCE=1]  (Spec 01 batch; writes only eval/runs/)
 make eval RUN=<stem> [COMPARE=<stem>] [THRESHOLD=<default CONFIDENCE_THRESHOLD>]
-   │
+   │  evaluate and promote never build LLMSettings (no provider/credential checks): they read
+   │  only APP_ROOT, CONFIDENCE_THRESHOLD (0–1, default 0.7) and config.ACTIVE_PROMPT_VERSION,
+   │  so they work with the D29 `.env`. Host-only (uv); not run inside the container.
    ▼
 load labels ─ extra/missing field, bad enum, duplicate id ─► exit 2 (explicit message)
-load run + meta ─ missing meta, results_sha256 mismatch, len ≠ meta.n, any item's
-                 version_prompt ≠ meta.prompt_version ─► exit 2
+load run + meta ─ missing meta, results_sha256 mismatch, len ≠ meta.n, duplicate result id,
+                 any item's version_prompt ≠ meta.prompt_version,
+                 meta.input_sha256 ≠ sha256(current SETS[meta.set] file) ─► exit 2
 labels chosen by meta.set (case → /etiquetas_esperadas.json, edge → edge labels)
    │ results validated STRUCTURALLY with Spec 01 `ClassificationShape` (no rule validators),
    │ so rule violations can be reported instead of crashing (G28)
@@ -80,21 +100,40 @@ labels chosen by meta.set (case → /etiquetas_esperadas.json, edge → edge lab
 meta.provider == "mock" ─► header "MOCK RUN — NOT MODEL QUALITY"
 align by id (approved labels only):
    missing result  → wrong in all 5 fields, failure row got="<missing>", excluded from confidence
-   extra result id → listed under extra_ids, not scored
+   result for a draft-labelled id → not_scored_draft
+   extra result id (no label at all) → listed under extra_ids, not scored
+   0 approved labels → every percentage "n/a" (no division by zero), exit 0
    ▼
 per-field accuracy (denominator = approved labels) · exact-match (all 5) · rule violations
-per-message confianza vs correct · threshold sweep 0.50–0.90 (routed to review, catch rate)
-COMPARE given → per-(id, field) differences between the two runs (stability or v1→v2 diff)
+per-message confianza vs correct · "routed at T" line · threshold sweep 0.50–0.90 step 0.05
+(routed to review, catch rate; "wrong" = not all 5 exact among present results)
+rule violations = items that fail Spec 01 `Classification` validation (the contract rules
+themselves, not a reimplementation); batch runs never contain them (invalid items become
+failures), so the section is non-empty only for hand-edited or foreign files
+COMPARE given → both runs must share meta.set and input_sha256 (else exit 2); header shows
+both models, prompt_sha256 and tool_schema_sha256; diff = the 5 scored fields plus confianza
+changes > 0.05; "noise floor" = per-field count of ids whose value flipped between two v1 runs
    ▼
 Markdown to stdout · exit 0
 
-make promote RUN=<stem>          refuses unless ALL hold (D23):
-   meta.provider == "anthropic_api" · meta.temperature == 0 · meta.set == "case"
-   meta.failures empty · ids == the 12 ids of /mensajes.json · results_sha256 matches
+make promote RUN=<stem> [ALLOW_MOCK=1] [FORCE=1]   refuses (exit 2, never a traceback) unless ALL hold (D23, D31):
+   meta.provider == "anthropic_api", meta.model == config.DEFAULT_MODEL and
+   meta.temperature is the number 0 (a JSON `false` is rejected)
+     — or, only with --allow-mock, meta.provider == "mock" (temperature not checked);
+       claude_agent_sdk is never promotable; a (provider, model) pair missing from the catalog
+       is refused · the stem has no suffix (compare/stability runs are never promoted, Spec 06)
+   meta.set == "case" · meta.failures empty · len == meta.n · the sorted id list equals the 12
+   ids of /mensajes.json exactly · every item's version_prompt == meta.prompt_version ·
+   results_sha256 matches
    meta.input_sha256 == sha256(/mensajes.json) · every item passes full Classification validation
    meta.prompt_version == active version · meta.prompt_sha256 == sha256 of the current
-   prompts/<version>.md
-   then writes /resultados.meta.json, then /resultados.json (atomic)
+   prompts/<version>.md · meta.tool_schema_sha256 == canonical hash of the tool schema the
+   run's provider would send today (strict flag from the catalog caps)
+   a mock promote over an existing /resultados.meta.json with `mock: false` is refused unless
+   --force (a real result is never silently replaced by mock output)
+   then writes /resultados.meta.json (run meta + `promoted_at`, `source_run`, `mock`: true or
+   false, always explicit), then /resultados.json as a byte-for-byte copy of the run file, so
+   the meta's results_sha256 verifies it (atomic)
 ```
 
 The only thing that writes `/resultados.json` is `make promote` (D19).
@@ -102,7 +141,7 @@ The only thing that writes `/resultados.json` is `make promote` (D19).
 ## 6. Report shape
 
 ```
-## Eval — set case · run v2__anthropic_api__claude-haiku-4-5 · temperature 0 · 12 scored
+## Eval — set case · run case__v1__anthropic_api__claude-haiku-4-5 · temperature 0 · labels <sha> · 12 scored
 | field          | accuracy     |
 | categoria      | 11/12 (92%)  |
 | …              |              |
@@ -154,6 +193,11 @@ default = `.env.example`, enforced by a test (Spec 04a); promote reads it from t
 
 ## 9. Iteration protocol (R3.3)
 
+Under D29 this protocol is delivered as tooling plus documentation: it is exercised end to end
+with mock runs (proving the commands, hashes and reports work), and the README lists the exact
+command sequence to produce real v1/v2 numbers with Pitz's key. No v2 prompt is written from mock
+results — mock output carries no quality signal, so "improving" against it would be fiction.
+
 1. Run v1 twice (`SUFFIX=b`) → `COMPARE` gives the noise floor (G19). Record in CHANGELOG.
 2. Read failures; write the hypothesis as a **general rule** (G20).
 3. v2 with one change; run on case and edge sets; record per-field before → after.
@@ -165,14 +209,22 @@ Every real run is announced with provider, model and expected call count before 
 
 ## 10. Gaps, edge cases, contradictions (this spec)
 
-- **G1** `requiere_info` → candidate's labels + `justificacion`.
+- **G1** `requiere_info` → candidate-approved labels + `justificacion`.
 - **G2** calibration measured with per-message table and sweep, not assumed.
 - **G19** non-determinism → noise floor from a repeated run; Agent SDK runs have no temperature
   control (meta `temperature: null`): usable for development evals, never promoted.
 - **G20** overfitting → edge set as regression guard; future set from PATCH corrections.
-- **G21** mock runs flagged; cannot be promoted (only `anthropic_api` at temperature 0 can, D23).
+- **G21** mock runs flagged (report header, meta `mock`); promotable only with `--allow-mock`
+  (D31). `resultados.json` itself cannot carry a marker (contract fields), so the README's first
+  line about it says it is mock output (the mock `resumen` and a constant `confianza` 0.5 also
+  give it away). Mock case scores are high by construction (the mock's keywords come from the
+  case messages, `providers/mock.py`): never shown as model quality.
+- **G35** no real run under D29 → no measured v1 → v2 iteration (R3.3), no sweep-derived
+  threshold (D12: `CONFIDENCE_THRESHOLD=0.7` is a documented placeholder) and no calibration
+  evidence (R1.10); the mock sweep is degenerate (constant 0.5) and is not presented as evidence.
 - **G28** rule checks need structural (not contract) validation of results.
-- Empty confidence bucket / zero wrong → `n/a`, no division by zero.
+- 0 scored labels or zero wrong → `n/a`, no division by zero.
+- Sonnet via `anthropic_api` can never be promoted (the catalog marks no temperature support).
 - Label typos (e.g. `automatización`) → exit 2, not silent mismatch.
 
 ## 11. Tests
@@ -181,10 +233,13 @@ Every real run is announced with provider, model and expected call count before 
 |---|---|
 | `test_scoring.py` | perfect match; one wrong field; missing result (all 5 wrong, excluded from confidence); extra result id; draft labels not scored; rule violation (21-word resumen) reported; sweep math incl. zero wrong → n/a; `compare_runs` diffs; markdown snapshot of a small synthetic fixture |
 | `test_evaluate_cli.py` | `main()` with tmp files: results_sha256 mismatch / len ≠ n / version_prompt ≠ meta → exit 2; COMPARE across different sets → exit 2; invalid label enum / extra field / missing field / duplicate id → exit 2 with message; invalid result item → exit 2; missing meta → exit 2; mock meta → header; valid → exit 0 |
-| `test_promote.py` | writes meta then run; refuses each D23 violation separately: provider ≠ anthropic_api (mock, claude_agent_sdk), temperature null or ≠ 0, set = edge, failures present, ids ≠ mensajes.json ids, hash mismatch, contract-invalid item, prompt version ≠ active, prompt_sha256 ≠ current file |
-| `test_golden_files.py` | both golden pairs load; message ids equal label ids; no golden message text appears in any `prompts/*.md` (D14) |
+| `test_promote.py` | writes meta then run; `--allow-mock` promotes a mock case run and marks `mock: true`; without it mock is refused; `--allow-mock` never admits `claude_agent_sdk`; refuses each D23 violation separately (incl. tool_schema_sha256 ≠ current): provider ≠ anthropic_api (mock, claude_agent_sdk), temperature null or ≠ 0, set = edge, failures present, ids ≠ mensajes.json ids, hash mismatch, contract-invalid item, prompt version ≠ active, prompt_sha256 ≠ current file |
+| `test_golden_files.py` | both message files pass `runs.load_requests`; label ids equal message ids for both sets |
+| `test_prompts.py` (extend Spec 01's) | the existing D14 shingle check covers the edge file too; a missing edge file fails instead of being skipped; failure messages never print golden text |
 
 ## 12. Acceptance
 
-`make eval` prints real reports for v1 (twice) and v2 on both sets; `make promote` produced
-`/resultados.json` + meta; README and `prompts/CHANGELOG.md` contain the numbers.
+`uv run pytest` green · ruff clean · files < 300 lines · a mock run of each set evaluates with the
+MOCK header · `python -m pitz_pulse.promote --run <case mock stem> --allow-mock` writes
+`/resultados.json` + meta marked `mock: true` · edge labels approved by the candidate (drafts are
+reported as not scored until then) · README section (Spec 04b) lists the real-key commands.
