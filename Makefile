@@ -5,7 +5,7 @@ ROOT := $(abspath .)
 API := $(ROOT)/apps/api
 UV := uv --directory $(API) run
 
-.PHONY: install test lint classify eval compare promote up down smoke
+.PHONY: install test lint classify eval compare compare-models promote up down smoke
 
 install:
 	uv --directory $(API) sync
@@ -30,6 +30,15 @@ compare:
 	$(if $(RUN),,$(error RUN is required, e.g. make compare RUN=... COMPARE=...))
 	$(if $(COMPARE),,$(error COMPARE is required, e.g. make compare RUN=... COMPARE=...))
 	$(UV) python -m pitz_pulse.evaluate --run $(RUN) $(if $(COMPARE),--compare $(COMPARE)) $(if $(THRESHOLD),--threshold $(THRESHOLD))
+
+compare-models:
+	$(if $(MODELS),,$(error MODELS is required, e.g. make compare-models MODELS="claude-haiku-4-5 claude-sonnet-5" LLM_PROVIDER=mock))
+	$(if $(LLM_PROVIDER),,$(error LLM_PROVIDER is required here (no auto-selection); use LLM_PROVIDER=mock or LLM_PROVIDER=anthropic_api))
+	@echo "provider=$(LLM_PROVIDER) models: $(MODELS)"
+	@echo "2 x (12+18) messages per model; retries can add calls"
+	$(if $(filter mock,$(LLM_PROVIDER)),,$(if $(filter 1,$(CONFIRM)),,$(error non-mock provider $(LLM_PROVIDER): re-run with CONFIRM=1, e.g. make compare-models MODELS="$(MODELS)" LLM_PROVIDER=$(LLM_PROVIDER) CONFIRM=1)))
+	$(foreach model,$(MODELS),$(MAKE) classify SET=case SUFFIX=cmp FORCE=$(FORCE) LLM_MODEL=$(model) $(if $(filter claude-sonnet-5,$(model)),LLM_TEMPERATURE=none) && $(MAKE) classify SET=edge SUFFIX=cmp FORCE=$(FORCE) LLM_MODEL=$(model) $(if $(filter claude-sonnet-5,$(model)),LLM_TEMPERATURE=none) &&) true
+	$(UV) python -m pitz_pulse.model_compare --runs $$($(UV) python -c "from pitz_pulse.config import ACTIVE_PROMPT_VERSION as V; from pitz_pulse.runs import run_stem as R; print(' '.join(R(s, V, '$(LLM_PROVIDER)', m, 'cmp') for m in '$(MODELS)'.split() for s in ('case', 'edge')))")
 
 promote:
 	$(if $(RUN),,$(error RUN is required, e.g. make promote RUN=case__v1__anthropic_api__claude-haiku-4-5))
