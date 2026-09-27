@@ -209,3 +209,14 @@ def test_non_utf8_input_exits_2(app_root, capsys):
     code, adapter = run_main(app_root, [make_call()])
     err = capsys.readouterr().err
     assert code == 2 and adapter.calls == [] and "UTF-8" in err and "Traceback" not in err
+
+
+class SdkLikeAdapter(FakeAdapter):
+    provider = "claude_agent_sdk"  # this provider never sends the tool schema
+
+
+def test_tool_schema_hash_is_null_when_the_tool_is_not_sent(app_root):
+    settings = settings_for(app_root)
+    classifier = build_classifier(settings, SdkLikeAdapter([make_call()] * 5))
+    assert main(["--set", "case"], settings=settings, classifier=classifier) == 0
+    assert read_meta(app_root)["tool_schema_sha256"] is None

@@ -10,6 +10,7 @@ from pitz_pulse.batch_run import BatchInterrupted, rejection_summary, run_batch
 from pitz_pulse.classifier import build_classifier
 from pitz_pulse.config import ConfigError, LLMSettings, load_llm_settings
 from pitz_pulse.logs import configure_logging
+from pitz_pulse.models_catalog import CLAUDE_AGENT_SDK
 from pitz_pulse.prompts import PromptError
 from pitz_pulse.runs import (
     SETS,
@@ -77,8 +78,13 @@ def build_meta(
         "billing": settings.caps.billing,
         "prompt_version": prompt.version,
         "prompt_sha256": prompt.sha256,
-        # Tool descriptions carry rubric text outside the prompt file (G14).
-        "tool_schema_sha256": canonical_sha256(classifier.tool),
+        # Tool descriptions carry rubric text outside the prompt file (G14); the Agent SDK
+        # adapter never sends the tool, so there is nothing to hash.
+        "tool_schema_sha256": (
+            None
+            if classifier.adapter.provider == CLAUDE_AGENT_SDK
+            else canonical_sha256(classifier.tool)
+        ),
         "temperature": settings.temperature,
         "invalid_output_retries": settings.invalid_output_retries,
         "llm_max_retries": settings.max_retries,
