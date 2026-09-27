@@ -7,8 +7,9 @@
   [--force]`, run files + meta with `results_sha256`, `input_sha256`, `prompt_sha256`,
   `tool_schema_sha256`, `runs.run_paths/canonical_sha256`), Spec 02 (`review.needs_review`),
   candidate-approved labels. Spec 04a wraps the CLIs below in `make` targets.
-- **Status:** draft (rev 5 — spec-gate findings applied, see
-  `docs/superpowers/reviews/2026-09-27-03-spec-review.md`)
+- **Status:** implemented on feat/spec-03-evaluation (rev 5); edge labels pending candidate
+  approval. Reviews: `docs/superpowers/reviews/2026-09-27-03-spec-review.md`,
+  `docs/superpowers/reviews/2026-09-27-03-plan-review.md`
 - **Decisions used:** D12, D14, D15, D19, D20, D23, D29, D31 (see `docs/MASTER.md`)
 
 > **No real model calls in development (D29).** Every tool here is built and tested with the mock
