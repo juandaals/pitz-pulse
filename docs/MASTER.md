@@ -9,7 +9,11 @@ decision log, and the register of gaps / edge cases / contradictions.
 - **Status legend:** `draft` → `approved` → `planned` → `in progress` → `done (verified)`.
 - **Reviews:** `docs/superpowers/reviews/2026-09-25-spec-review.md` (all specs: 100 raw → 76
   confirmed, applied in rev 2) · `docs/superpowers/reviews/2026-09-25-01-spec-review.md` (Spec 01
-  spec gate: 5 dr-strange slices + verifier → 5 High confirmed, applied in Spec 01 rev 3).
+  spec gate: 5 dr-strange slices + verifier → 5 High confirmed, applied in Spec 01 rev 3) ·
+  Spec 02: `docs/superpowers/reviews/2026-09-27-02-spec-review.md` (spec gate, applied in rev 5) ·
+  `docs/superpowers/reviews/2026-09-27-02-plan-review.md` (plan gate, rev 5.1) ·
+  `docs/superpowers/reviews/2026-09-27-02-implementation-review.md` (implementation gate; rulings
+  applied in the final fix wave).
 
 ---
 
@@ -61,10 +65,10 @@ pitz-pulse/
 │   ├── api/                      # Python 3.12 · FastAPI · LangGraph · SQLite
 │   │   ├── pyproject.toml  uv.lock  Dockerfile
 │   │   ├── prompts/              # v1.md, v2.md, CHANGELOG.md
-│   │   ├── migrations/           # 001_init.sql, 002_… (extras)
 │   │   ├── eval/golden/          # edge_cases.messages.json, edge_cases.labels.json
 │   │   ├── eval/runs/            # <set>__<prompt>__<provider>__<model>[__<suffix>].json + .meta.json (committed)
 │   │   ├── src/pitz_pulse/       # providers/ subpackage for adapters
+│   │   │   └── migrations/       # 001_init.sql, 002_… (extras); packaged with the code
 │   │   └── tests/
 │   └── web/                      # extra (Spec 05): Vite · React · TS, nginx proxy /api
 └── .github/workflows/            # extra (Spec 06a): CI
