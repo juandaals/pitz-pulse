@@ -127,3 +127,47 @@ def test_mask_request_masks_source_area_too():
     assert masked.source_area == "Ventas - [EMAIL]"
     assert masked.pii_counts == {"email": 1}
     assert mask_request("hola", None).source_area is None
+
+
+@pytest.mark.parametrize(
+    "text,placeholder",
+    [
+        # G1: underscores (Slack/Markdown italics) are word characters but not phone neighbours.
+        ("meu cel é _11 98765-4321_ ok", "[PHONE]"),
+        ("_5511999999999_", "[PHONE]"),
+        ("ligar _9999-9999_ hoje", "[PHONE]"),
+        # G2: year-shaped landlines after a phone keyword.
+        ("tel (11) 2045-2078", "[PHONE]"),
+        ("whatsapp 2045 2078", "[PHONE]"),
+        ("telefone 11 2045-2078", "[PHONE]"),
+        # G4: invisible format characters inside PII.
+        ("a​@example.com", "[EMAIL]"),
+        ("tel 99999​-9999", "[PHONE]"),
+        ("CPF 111.111­.111-00", "[CPF]"),
+        ("mail a⁠b@exam‎ple.com", "[EMAIL]"),
+        ("﻿CNPJ 12.345.678/0001-00", "[CNPJ]"),
+        # G5: separator typos in CPF/CNPJ.
+        ("CPF 123.456.789.09", "[CPF]"),
+        ("CPF 123-456-789-09", "[CPF]"),
+        ("CNPJ 12.345.678.0001-00", "[CNPJ]"),
+        ("CNPJ 12.345.678/0001.00", "[CNPJ]"),
+    ],
+)
+def test_masks_final_review_gaps(text, placeholder):
+    result = mask(text)
+    assert placeholder in result.text, result.text
+    assert not re.search(r"\d{3,}", result.text), result.text
+
+
+@pytest.mark.parametrize("text", ["ip 192.168.100.10", "versão 10.0.19045.1"])
+def test_valid_ipv4_is_not_a_cpf(text):
+    assert mask(text).text == text
+
+
+def test_ipv4_guard_ignores_out_of_range_octets():
+    # 3.3.3.3 digits with octets > 255 is not an address, so the phone rule may claim it.
+    assert "[PHONE]" in mask("tel 999.999.999.999").text
+
+
+def test_format_characters_are_stripped():
+    assert mask("ok​­⁠‎﻿!").text == "ok!"

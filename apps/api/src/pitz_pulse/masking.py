@@ -2,7 +2,11 @@
 
 Covered: email, CNPJ (numeric and 2026 alphanumeric), CPF, CURP, RFC, BR/MX phones.
 Not covered: names, addresses, CLABE/bank accounts, cards, NF-e keys, obfuscated emails,
-bare 8-9 digit phones without a phone keyword, lowercase space-separated RFCs.
+bare 8-9 digit phones without a phone keyword, lowercase space-separated RFCs,
+CPFs written with dots only whose four groups also form a valid IPv4 address.
+Unicode format characters (category Cf: zero-width spaces, soft hyphens, BOM...) are removed
+before NFKC so they cannot split PII. The "número"/"numero" phone keyword over-masks order or
+ticket numbers of 8-9 digits by design (privacy first, D14); only the prompt copy is masked.
 """
 
 import re
@@ -13,11 +17,20 @@ from datetime import datetime
 _DASHES = dict.fromkeys(map(ord, "‐‑‒–—―−"), "-")
 
 _EMAIL = re.compile(r"[\w.+%-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}")
+_OCTET = r"(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)"
+_IPV4 = rf"(?<!\d){_OCTET}(?:\.{_OCTET}){{3}}(?!\d)"
+# Separators are tolerated anywhere (typos like "12.345.678.0001-00" are still CNPJs).
 _CNPJ = re.compile(
-    r"(?<![0-9A-Za-z])[0-9A-Z]{2}\.?[0-9A-Z]{3}\.?[0-9A-Z]{3}/?[0-9A-Z]{4}-?\d{2}(?![0-9A-Za-z])",
+    r"(?<![0-9A-Za-z])[0-9A-Z]{2}[./-]?[0-9A-Z]{3}[./-]?[0-9A-Z]{3}[./-]?[0-9A-Z]{4}[./-]?\d{2}"
+    r"(?![0-9A-Za-z])",
     re.IGNORECASE,
 )
-_CPF = re.compile(r"(?<!\d)\d{3}\.\d{3}\.\d{3}-\d{2}(?!\d)")
+# The last separator is mandatory so bare 11-digit numbers stay phones; a dots-only form that
+# is also a valid IPv4 address is left alone.
+_CPF = re.compile(
+    rf"(?<![0-9A-Za-z])(?!{_IPV4}(?![0-9A-Za-z]))\d{{3}}[.-]?\d{{3}}[.-]?\d{{3}}[.-]\d{{2}}"
+    r"(?![0-9A-Za-z])"
+)
 _CURP = re.compile(
     r"(?<![0-9A-Za-z])[A-Z]{4}\d{6}[HMX][A-Z]{5}[A-Z0-9]\d(?![0-9A-Za-z])", re.IGNORECASE
 )
@@ -33,17 +46,20 @@ _RFC_SEPARATED_SPACE = re.compile(
     r"(?<![0-9A-Za-z])[A-ZÑ&]{3,4}\s(\d{6})\s[A-Z0-9]{3}(?![0-9A-Za-z])"
 )
 # Local form first so "9999-9999 8888-8888" is two phones, not one greedy match.
+# Neighbours are ASCII alphanumerics, not \w: "_" (Markdown italics) must not shield a phone.
 _PHONE = re.compile(
-    r"(?<![\w-])\d{4,5}[-. ]\d{4}(?![\w-])"
-    r"|(?<![\w+])(?:\+|\()?\d(?:[\s().-]*\d){9,13}(?!\d)"
+    r"(?<![0-9A-Za-z-])\d{4,5}[-. ]\d{4}(?![0-9A-Za-z-])"
+    r"|(?<![0-9A-Za-z+])(?:\+|\()?\d(?:[\s().-]*\d){9,13}(?!\d)"
 )
 # Bare 8-9 digit local numbers have no distinguishing shape (they collide with ticket/order
 # IDs), so they are only masked when a phone keyword precedes them. Up to 3 non-space
 # connector characters (":", "-", or a short word like "es"/"e") may sit between the keyword
-# and the digits; surrounding whitespace is unlimited.
+# and the digits; surrounding whitespace is unlimited. Separated local forms with an optional
+# area code ("(11) 2045-2078") are accepted here because the year guards would claim them later.
 _PHONE_KEYWORD = re.compile(
     r"(?<![0-9A-Za-z])(?:tel[eé]fono|telefone|tel|celular|cel|whatsapp|whats|"
-    r"n[uú]mero|fone|ligue|llame|llamar)(?![A-Za-z])\s*[^\d\s]{0,3}\s*(\d{8,9})(?!\d)",
+    r"n[uú]mero|fone|ligue|llame|llamar)(?![A-Za-z])\s*[^\d\s]{0,3}\s*"
+    r"((?:(?:\(\d{2}\)|\d{2})\s?)?\d{4,5}[-. ]\d{4}|\d{8,9})(?!\d)",
     re.IGNORECASE,
 )
 # Spans never masked as phones; phones are searched only in the text between them.
@@ -52,7 +68,7 @@ _GUARDS = (
     re.compile(r"(?<!\d)(?:19|20)\d{2}-(?:0[1-9]|1[0-2])(?!\d)"),  # year-month
     re.compile(r"(?<!\d)\d{4}-\d{2}-\d{2}(?!\d)"),  # ISO dates
     re.compile(r"(?<!\d)\d{1,2}[./]\d{1,2}[./]\d{2,4}(?!\d)"),  # dotted / slashed dates
-    re.compile(r"(?<!\d)(?:\d{1,3}\.){3}\d{1,3}(?!\d)"),  # IPv4 / version strings
+    re.compile(_IPV4),  # IPv4 / short version strings (octets <= 255 only)
     # Amounts: bounded to a plausible number so it can't swallow an adjacent phone number
     # that happens to sit right after a currency symbol with no separating space.
     re.compile(
@@ -76,7 +92,8 @@ class MaskedRequest:
 
 
 def normalize(text: str) -> str:
-    return unicodedata.normalize("NFKC", text).translate(_DASHES)
+    visible = "".join(ch for ch in text if unicodedata.category(ch) != "Cf")
+    return unicodedata.normalize("NFKC", visible).translate(_DASHES)
 
 
 def mask(text: str) -> MaskResult:
