@@ -1,7 +1,7 @@
 """Deterministic keyword rules so the stack runs without credentials. Never model quality.
 
-The keywords were picked from the case messages' own wording, so a mock run scores well on the
-case set by construction: never read eval scores of mock runs as model quality.
+Its keywords come from the case messages' own wording, so its case scores say nothing about
+model quality: never read eval scores of mock runs as model quality.
 """
 
 import re

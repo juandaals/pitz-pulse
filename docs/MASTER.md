@@ -108,7 +108,7 @@ pitz-pulse/
 |---|------|--------|------|------|--------|
 | 01 | Classification core | Part 1 | `specs/2026-09-25-01-classification-core-design.md` | pending | implemented and gate-reviewed on `feat/spec-01-classification-core`; real smoke deferred to the Pitz key (D29) |
 | 02 | Service & persistence | Part 2 | `specs/2026-09-25-02-service-persistence-design.md` | `plans/2026-09-27-02-service-persistence-plan.md` (v2, plan gate applied) | implemented on feat/spec-02-service-persistence; implementation gate next |
-| 03 | Evaluation, golden sets, iteration | Part 3 | `specs/2026-09-25-03-evaluation-design.md` | pending | implemented on feat/spec-03-evaluation (rev 5); edge labels pending candidate approval |
+| 03 | Evaluation, golden sets, iteration | Part 3 | `specs/2026-09-25-03-evaluation-design.md` | `plans/2026-09-27-03-evaluation-plan.md` (v2) | implemented on feat/spec-03-evaluation (rev 5); edge labels pending candidate approval |
 | 04 | 04a delivery · 04b docs | Part 2 (compose) + Part 4 | `specs/2026-09-25-04-delivery-docs-design.md` | pending | draft rev 3 (D29/D30 amendments) |
 | 05 | Review web UI (extra) | X5 | `specs/2026-09-25-05-review-web-ui-design.md` | pending | draft rev 2 |
 | 06 | Extras: CI, compare, duplicates, Slack | X1–X4 | `specs/2026-09-25-06-extras-design.md` | pending | draft rev 2 |
@@ -249,6 +249,7 @@ show real output → propose commit(s) → candidate approves.
 1. ~~`etiquetas_esperadas.json`~~ approved 2026-09-25 (AI-drafted, candidate-approved; disclosed in README/AI_LOG).
 2. Edge-set labels drafted in Spec 03 and approved by the candidate at the end of Spec 03 (D31); earlier edge runs score nothing.
 3. No real key in this repo's development (D29). `resultados.json` comes from a marked mock run (D31); real runs need Pitz's `ANTHROPIC_API_KEY`.
+4. Do not merge Spec 03 to main before the Spec 04b README discloses that `resultados.json` is mock output (G21).
 
 ## 10. Delivery checklist (maps to the case deliverables)
 

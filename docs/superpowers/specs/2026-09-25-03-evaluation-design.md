@@ -33,7 +33,7 @@ Golden files contain only input and truth — never a model, provider or prompt 
 from any provider/model/prompt is scored against the same files. No golden message is ever used
 as a prompt example (D14).
 
-Edge set (15–20 messages) covers: each PII type, prompt injection, mixed ES/PT, very vague, two
+Edge set (18 messages) covers: each PII type, prompt injection, mixed ES/PT, very vague, two
 requests in one message, a long message (within Spec 01 limits: ≤ 4000 characters stripped,
 ≤ 8000 raw, so `runs.load_requests` accepts the file), emoji/Slack markup, explicit urgency words
 without real impact, real impact without urgency words. A third language is left out: the
@@ -218,8 +218,8 @@ Every real run is announced with provider, model and expected call count before 
 - **G21** mock runs flagged (report header, meta `mock`); promotable only with `--allow-mock`
   (D31). `resultados.json` itself cannot carry a marker (contract fields), so the README's first
   line about it says it is mock output (the mock `resumen` and a constant `confianza` 0.5 also
-  give it away). Mock case scores are high by construction (the mock's keywords come from the
-  case messages, `providers/mock.py`): never shown as model quality.
+  give it away). Its keywords come from the case messages (`providers/mock.py`), so its case
+  scores say nothing about model quality: never shown as such.
 - **G35** no real run under D29 → no measured v1 → v2 iteration (R3.3), no sweep-derived
   threshold (D12: `CONFIDENCE_THRESHOLD=0.7` is a documented placeholder) and no calibration
   evidence (R1.10); the mock sweep is degenerate (constant 0.5) and is not presented as evidence.
