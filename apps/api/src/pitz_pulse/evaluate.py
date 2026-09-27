@@ -17,7 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field, StrictInt, ValidationError
 
 from pitz_pulse.config import DEFAULT_APP_ROOT
 from pitz_pulse.labels import LABEL_FILES, Label, LabelError, load_labels
-from pitz_pulse.runs import SETS, RunError, repo_root, run_paths, sha256_hex
+from pitz_pulse.runs import SETS, RunError, item_label, repo_root, run_paths, sha256_hex
 from pitz_pulse.schema import ClassificationShape
 from pitz_pulse.scoring import EvalReport, compare_runs, score
 
@@ -41,12 +41,6 @@ class RunMeta(BaseModel):
     failures: list
     input_sha256: str
     results_sha256: str
-
-
-def _ref(item: object, index: int) -> object:
-    if isinstance(item, dict) and isinstance(item.get("id"), str):
-        return item["id"]
-    return index
 
 
 def _validation_reason(exc: ValidationError) -> str:
@@ -88,7 +82,7 @@ def _load_results(run_path: Path, run_bytes: bytes, meta: RunMeta) -> list[Class
             result = ClassificationShape.model_validate(item)
         except ValidationError as exc:
             raise RunError(
-                f"invalid result item {_ref(item, index)}: {_validation_reason(exc)}"
+                f"invalid result item {item_label(item, index)}: {_validation_reason(exc)}"
             ) from None
         if result.id in seen:
             raise RunError(f"duplicate id {result.id}")

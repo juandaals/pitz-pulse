@@ -6,6 +6,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, StrictBool, ValidationError
 
+from pitz_pulse.runs import item_label
 from pitz_pulse.schema import Area, Categoria, Idioma, Prioridad
 
 LABEL_FILES = {
@@ -32,12 +33,6 @@ class Label(BaseModel):
     justificacion: str | None = None
 
 
-def _label(item: object, index: int) -> object:
-    if isinstance(item, dict) and isinstance(item.get("id"), str):
-        return item["id"]
-    return index
-
-
 def load_labels(path: Path) -> list[Label]:
     try:
         text = path.read_text(encoding="utf-8")
@@ -61,7 +56,7 @@ def load_labels(path: Path) -> list[Label]:
             fields = ", ".join(
                 ".".join(map(str, e["loc"])) for e in exc.errors(include_input=False)
             )
-            raise LabelError(f"invalid label item {_label(item, index)}: {fields}") from None
+            raise LabelError(f"invalid label item {item_label(item, index)}: {fields}") from None
         if label.id in seen:
             raise LabelError(f"duplicate id {label.id}")
         seen.add(label.id)

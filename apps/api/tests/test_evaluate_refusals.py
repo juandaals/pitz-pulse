@@ -12,7 +12,7 @@ def test_stem_invalid_exits_two(tmp_path, capsys):
     out = capsys.readouterr()
     assert code == 2
     assert out.out == ""
-    assert "error:" in out.err
+    assert "invalid run name" in out.err
 
 
 def test_run_file_missing_exits_two(tmp_path, capsys):
@@ -155,7 +155,7 @@ def test_label_file_missing_exits_two(tmp_path, capsys):
     out = capsys.readouterr()
     assert code == 2
     assert out.out == ""
-    assert "error:" in out.err
+    assert "etiquetas_esperadas.json does not exist" in out.err
 
 
 def test_label_file_invalid_json_exits_two(tmp_path, capsys):
@@ -167,7 +167,7 @@ def test_label_file_invalid_json_exits_two(tmp_path, capsys):
     out = capsys.readouterr()
     assert code == 2
     assert out.out == ""
-    assert "error:" in out.err
+    assert "etiquetas_esperadas.json is not valid JSON" in out.err
 
 
 def test_meta_not_json_exits_two_without_traceback(tmp_path, capsys):
@@ -193,7 +193,8 @@ def test_meta_missing_n_exits_two_without_traceback(tmp_path, capsys):
     assert code == 2
     assert out.out == ""
     assert "Traceback" not in out.err
-    assert "n" in out.err
+    assert "invalid run meta" in out.err
+    assert "): n" in out.err
 
 
 def test_meta_model_as_number_exits_two_without_traceback(tmp_path, capsys):
