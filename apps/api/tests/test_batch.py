@@ -6,7 +6,7 @@ import threading
 import pytest
 from fakes import FakeAdapter, make_call
 
-from pitz_pulse import batch as batch_module
+from pitz_pulse import batch_run
 from pitz_pulse.batch import META_KEYS, main, run_batch
 from pitz_pulse.classifier import build_classifier
 from pitz_pulse.config import DEFAULT_APP_ROOT, parse_llm_settings
@@ -167,7 +167,7 @@ def test_first_rejected_cancels_remaining(app_root):
 
 
 def test_ctrl_c_in_main_thread_abandons_and_writes_nothing(app_root, monkeypatch, capsys):
-    real = batch_module.wait
+    real = batch_run.wait
     calls = []
 
     def interrupted(*args, **kwargs):
@@ -176,7 +176,7 @@ def test_ctrl_c_in_main_thread_abandons_and_writes_nothing(app_root, monkeypatch
             raise KeyboardInterrupt
         return real(*args, **kwargs)
 
-    monkeypatch.setattr(batch_module, "wait", interrupted)
+    monkeypatch.setattr(batch_run, "wait", interrupted)
     code, adapter = run_main(app_root, [make_call()] * 5, concurrency=1)
     run, meta = run_paths(app_root, STEM)
     assert code == 130 and not run.exists() and not meta.exists()
@@ -190,3 +190,22 @@ def test_non_list_or_empty_input_exits_2(app_root, capsys, content, needle):
     code, adapter = run_main(app_root, [make_call()])
     assert code == 2 and adapter.calls == []
     assert needle in capsys.readouterr().err
+
+
+def test_all_rejected_summary_names_error_types(app_root, capsys):
+    code, _ = run_main(app_root, [LLMError("rejected", "APIStatusError:400")] * 5, concurrency=1)
+    err = capsys.readouterr().err
+    assert code == 1 and "APIStatusError:400 ×5" in err and "credential" not in err
+
+
+def test_all_rejected_by_credential_mentions_the_credential(app_root, capsys):
+    code, _ = run_main(app_root, [LLMError("rejected", "APIStatusError:401")] * 5, concurrency=1)
+    err = capsys.readouterr().err
+    assert code == 1 and "APIStatusError:401 ×1" in err and "credential" in err
+
+
+def test_non_utf8_input_exits_2(app_root, capsys):
+    (app_root.parents[1] / "mensajes.json").write_bytes(b'[{"id": "A", "message": "caf\xe9"}]')
+    code, adapter = run_main(app_root, [make_call()])
+    err = capsys.readouterr().err
+    assert code == 2 and adapter.calls == [] and "UTF-8" in err and "Traceback" not in err

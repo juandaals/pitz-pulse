@@ -52,14 +52,19 @@ def test_programming_errors_are_not_mapped_to_unavailable():
         adapter(broken).invoke("s", "u", {"name": "t"}, 30)
 
 
-def test_control_request_timeout_is_unavailable():
-    async def timing_out(*, prompt, options):
-        raise Exception("Control request timeout: initialize")
+@pytest.mark.parametrize(
+    "text", ["Control request timeout: initialize", f"control protocol broke {SENTINEL}"]
+)
+def test_bare_sdk_exception_is_unavailable_without_text(text, caplog):
+    async def failing(*, prompt, options):
+        raise Exception(text)  # the SDK raises bare Exception for control-protocol failures
         yield  # pragma: no cover
 
     with pytest.raises(LLMError) as info:
-        adapter(timing_out).invoke("s", "u", {"name": "t"}, 30)
-    assert (info.value.kind, info.value.error_type) == ("unavailable", "ControlRequestTimeout")
+        adapter(failing).invoke("s", "u", {"name": "t"}, 30)
+    assert (info.value.kind, info.value.error_type) == ("unavailable", "SDKControlError")
+    assert SENTINEL not in str(info.value) and SENTINEL not in caplog.text
+    assert info.value.__cause__ is None and info.value.__suppress_context__
 
 
 def test_stderr_is_logged_as_a_constant_event_without_text(caplog):

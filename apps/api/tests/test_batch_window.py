@@ -5,8 +5,8 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
-from pitz_pulse import batch as batch_module
-from pitz_pulse.batch import run_batch
+from pitz_pulse import batch_run
+from pitz_pulse.batch_run import run_batch
 from pitz_pulse.classifier import ClassificationError
 from pitz_pulse.graph import AttemptRecord
 from pitz_pulse.schema import RequestInput
@@ -44,7 +44,7 @@ class CountingPool(ThreadPoolExecutor):
 @pytest.fixture
 def pool(monkeypatch):
     CountingPool.instances.clear()
-    monkeypatch.setattr(batch_module, "ThreadPoolExecutor", CountingPool)
+    monkeypatch.setattr(batch_run, "ThreadPoolExecutor", CountingPool)
     yield CountingPool.instances
 
 
@@ -135,3 +135,15 @@ def test_other_rejections_are_recorded_and_the_batch_continues(pool, error_type)
     outcomes, failures = run_batch(StubClassifier(behaviors), _requests("A", "B", "C"), 1)
     assert set(outcomes) == {"B", "C"}
     assert [(f.id, f.kind) for f in failures] == [("A", "llm_rejected")]
+
+
+def test_base_exception_propagates_and_pool_is_shut_down(pool):
+    class Stop(BaseException):
+        pass
+
+    def stop():
+        raise Stop
+
+    with pytest.raises(Stop):
+        run_batch(StubClassifier({"A": stop}), _requests("A"), 1)
+    assert pool[0].shut_down

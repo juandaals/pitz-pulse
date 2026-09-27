@@ -33,7 +33,6 @@ _ALLOWED_INHERITED = ("PATH", "TMPDIR", "LANG", "LC_ALL")
 _REJECTED = {"authentication_failed", "billing_error", "invalid_request"}
 _RETRYABLE_STATUS = {408, 409, 429}
 _CLEANUP_MARGIN_S = 15  # the SDK's shielded transport close can take this long
-_CONTROL_TIMEOUT = "Control request timeout"  # the SDK raises a bare Exception for this
 _SLOTS: threading.BoundedSemaphore | None = None
 _SLOTS_LOCK = threading.Lock()
 
@@ -174,9 +173,11 @@ class ClaudeAgentSdkAdapter:
         except ClaudeSDKError as exc:  # CLIConnectionError, ProcessError, decode errors
             raise LLMError("unavailable", type(exc).__name__, elapsed_ms(start)) from None
         except Exception as exc:
-            if type(exc) is Exception and str(exc).startswith(_CONTROL_TIMEOUT):
-                raise LLMError("unavailable", "ControlRequestTimeout", elapsed_ms(start)) from None
-            raise  # a programming error is not a transient provider failure
+            if type(exc) is not Exception:
+                raise  # a programming error is not a transient provider failure
+            # The SDK raises bare Exception for control-protocol failures (e.g. timeouts); its
+            # text is never kept.
+            raise LLMError("unavailable", "SDKControlError", elapsed_ms(start)) from None
         return None
 
     async def _collect(self, user: str, options: ClaudeAgentOptions, budget: float, sink: list):

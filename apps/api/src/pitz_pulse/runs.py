@@ -105,6 +105,8 @@ def _label(item: object, index: int) -> object:
 def load_requests(path: Path) -> list[RequestInput]:
     try:
         items = json.loads(path.read_text(encoding="utf-8"))
+    except UnicodeDecodeError:
+        raise RunError(f"{path.name} is not valid UTF-8") from None
     except json.JSONDecodeError:
         raise RunError(f"{path.name} is not valid JSON") from None
     if not isinstance(items, list):

@@ -1,25 +1,16 @@
 """Batch CLI: classify a golden set into eval/runs/ (never writes resultados.json, D19)."""
 
 import argparse
-import logging
 import os
 import statistics
 import sys
-from concurrent.futures import FIRST_COMPLETED, CancelledError, ThreadPoolExecutor, wait
-from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
-from pitz_pulse.classifier import (
-    ClassificationCrash,
-    ClassificationError,
-    ClassifyOutcome,
-    build_classifier,
-)
+from pitz_pulse.batch_run import BatchInterrupted, rejection_summary, run_batch
+from pitz_pulse.classifier import build_classifier
 from pitz_pulse.config import ConfigError, LLMSettings, load_llm_settings
-from pitz_pulse.graph import AttemptRecord
 from pitz_pulse.logs import configure_logging
 from pitz_pulse.prompts import PromptError
-from pitz_pulse.providers.base import CREDENTIAL_ERROR_TYPES
 from pitz_pulse.runs import (
     SETS,
     RunError,
@@ -34,7 +25,6 @@ from pitz_pulse.runs import (
     write_pair,
 )
 
-logger = logging.getLogger(__name__)
 META_KEYS = (
     "set",
     "input_file",
@@ -63,92 +53,6 @@ META_KEYS = (
     "p50_latency_ms_per_message",
     "run_at",
 )
-
-
-@dataclass(frozen=True)
-class Failure:
-    id: str
-    kind: str  # llm_unavailable | llm_rejected | invalid_output | unexpected | cancelled
-    attempts: list[AttemptRecord] = field(default_factory=list)
-
-
-class BatchInterrupted(Exception):
-    def __init__(self, in_flight: int):
-        super().__init__(in_flight)
-        self.in_flight = in_flight
-
-
-def _is_credential_rejection(exc: ClassificationError) -> bool:
-    last = exc.attempts[-1] if exc.attempts else None
-    return (
-        exc.kind == "llm_rejected"
-        and last is not None
-        and (last.error_type in CREDENTIAL_ERROR_TYPES)
-    )
-
-
-def _unexpected(request_id: str, error_type: str, attempts=()) -> Failure:
-    logger.error(
-        "batch_item_failed",
-        extra={"fields": {"message_id": request_id, "error_type": error_type}},
-    )
-    return Failure(request_id, "unexpected", list(attempts))
-
-
-def _record(future, request_id, outcomes, failures) -> bool:
-    """Store the outcome; return False once a credential rejection means we should stop."""
-    try:
-        outcomes[request_id] = future.result()
-    except CancelledError:
-        failures.append(Failure(request_id, "cancelled"))
-    except ClassificationError as exc:
-        failures.append(Failure(request_id, exc.kind, exc.attempts))
-        if _is_credential_rejection(exc):  # every further call would fail the same way
-            return False
-    except ClassificationCrash as exc:
-        failures.append(_unexpected(request_id, exc.error_type, exc.attempts))
-    except Exception as exc:  # a classifier bug must not lose the other items
-        failures.append(_unexpected(request_id, type(exc).__name__))
-    return True
-
-
-def run_batch(classifier, requests, concurrency: int):
-    """Keep at most `concurrency` requests in flight and refill each slot as soon as it
-    frees up: a credential rejection (or Ctrl-C) then bounds further spend to whatever the
-    pool already holds, and one slow item never stalls the other slots.
-    """
-    outcomes: dict[str, ClassifyOutcome] = {}
-    failures: list[Failure] = []
-    pool = ThreadPoolExecutor(max_workers=concurrency)
-    pending = iter(requests)
-    window: dict = {}
-    stopped = interrupted = False
-
-    def fill() -> None:
-        while len(window) < concurrency:
-            request = next(pending, None)
-            if request is None:
-                return
-            window[pool.submit(classifier.classify, request)] = request.id
-
-    try:
-        fill()
-        while window:
-            done, _ = wait(window, return_when=FIRST_COMPLETED)
-            for future in done:
-                if not _record(future, window.pop(future), outcomes, failures):
-                    stopped = True
-            if not stopped:
-                fill()
-    except KeyboardInterrupt:
-        interrupted = True
-        in_flight = sum(1 for future in window if future.running())
-        raise BatchInterrupted(in_flight) from None
-    finally:
-        pool.shutdown(wait=not interrupted, cancel_futures=True)
-    if stopped:  # requests never submitted: record them as cancelled
-        failures.extend(Failure(r.id, "cancelled") for r in pending)
-    return outcomes, failures
 
 
 def build_meta(
@@ -249,10 +153,7 @@ def main(argv=None, settings: LLMSettings | None = None, classifier=None) -> int
         )
         return 130
     if not outcomes and all(f.kind in ("llm_rejected", "cancelled") for f in failures):
-        print(
-            "error: every item was rejected; nothing written (check the credential)",
-            file=sys.stderr,
-        )
+        print(f"error: {rejection_summary(failures)}", file=sys.stderr)
         return 1
     items = [
         outcomes[r.id].classification
