@@ -99,7 +99,7 @@ pitz-pulse/
                                      └─ MockAdapter           (offline)
 
  batch.py ─► classifier ─► eval/runs/*.json + meta      evaluate.py ◄─ runs + golden sets
- promote.py ─► resultados.json + resultados.meta.json   (refuses mock runs)
+ promote.py ─► resultados.json + resultados.meta.json   (refuses mock unless --allow-mock, D31)
 ```
 
 ## 5. Spec index and build order
