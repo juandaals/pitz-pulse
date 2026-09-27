@@ -10,6 +10,7 @@ from typing import Any
 from pitz_pulse.models_catalog import MOCK, lookup
 from pitz_pulse.providers.base import LLMCall
 
+MOCK_SUMMARY = "Solicitud clasificada por el modo mock sin modelo."
 _MESSAGE = re.compile(r"<message>(.*)</message>", re.DOTALL)
 _RULES = (
     (("acceso", "acesso", "permiso", "permissão"), "acceso", "devops"),
@@ -46,7 +47,7 @@ class MockAdapter:
             "prioridad": "media",
             "area_sugerida": area,
             "idioma": "pt" if any(marker in text for marker in _PORTUGUESE) else "es",
-            "resumen": "Solicitud clasificada por el modo mock sin modelo.",
+            "resumen": MOCK_SUMMARY,
             "requiere_info": False,
             "pregunta_seguimiento": None,
             "confianza": 0.5,

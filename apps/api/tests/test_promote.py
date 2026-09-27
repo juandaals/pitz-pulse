@@ -5,6 +5,7 @@ from promote_support import BASELINE_STEM, baseline_items, build_repo, write_run
 
 from pitz_pulse import batch, promote
 from pitz_pulse.config import parse_llm_settings
+from pitz_pulse.providers.mock import MOCK_SUMMARY
 from pitz_pulse.runs import run_paths, sha256_hex
 
 MOCK_STEM = "case__v1__mock__mock"
@@ -116,6 +117,11 @@ REFUSALS = {
         [],
         "--allow-mock",
     ),
+    "mock_billing": ({"meta_overrides": {"billing": "none"}}, [], "mock output"),
+    "mock_zero_tokens": ({"meta_overrides": {"total_input_tokens": 0}}, [], "mock output"),
+    "mock_resumen": ({"items": _items_with(resumen=MOCK_SUMMARY)}, [], "mock output"),
+    "results_sha_mismatch": ({"corrupt_bytes": True}, [], "results_sha256"),
+    "length_mismatch": ({"meta_overrides": {"n": 1}}, [], "meta.n"),
 }
 
 
@@ -176,3 +182,16 @@ def test_real_over_real_result_needs_no_force(tmp_path):
     outputs(app_root)[1].write_text(json.dumps({"mock": False}), encoding="utf-8")
 
     assert run_promote(app_root, ["--run", BASELINE_STEM]) == 0
+
+
+def test_missing_meta_with_existing_results_needs_force(mock_run, capsys):
+    assert run_promote(mock_run, ["--run", MOCK_STEM, "--allow-mock"]) == 0
+    results_path, meta_path = outputs(mock_run)
+    meta_path.unlink()
+    assert results_path.exists()
+
+    code = run_promote(mock_run, ["--run", MOCK_STEM, "--allow-mock"])
+
+    assert code == 2
+    assert "--force" in capsys.readouterr().err
+    assert results_path.exists()  # the orphaned real result is left untouched

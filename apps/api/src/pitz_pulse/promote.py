@@ -20,6 +20,7 @@ from pitz_pulse.config import ACTIVE_PROMPT_VERSION, DEFAULT_APP_ROOT, DEFAULT_M
 from pitz_pulse.evaluate import RunMeta, load_run
 from pitz_pulse.models_catalog import ANTHROPIC_API, CLAUDE_AGENT_SDK, MOCK, lookup
 from pitz_pulse.prompts import PromptError, load_prompt
+from pitz_pulse.providers.mock import MOCK_SUMMARY
 from pitz_pulse.runs import (
     SETS,
     RunError,
@@ -37,7 +38,16 @@ RESULTS_FILE = "resultados.json"
 RESULTS_META_FILE = "resultados.meta.json"
 
 
-def _check_provider(meta: RunMeta, allow_mock: bool) -> None:
+def _looks_like_mock_output(meta: RunMeta, results: list[ClassificationShape]) -> bool:
+    """Content giveaways of a mock run disguised under a real provider/model in its meta."""
+    if getattr(meta, "billing", None) == "none":
+        return True
+    if getattr(meta, "total_input_tokens", None) == 0:
+        return True
+    return any(result.resumen == MOCK_SUMMARY for result in results)
+
+
+def _check_provider(meta: RunMeta, allow_mock: bool, results: list[ClassificationShape]) -> None:
     try:
         caps = lookup(meta.provider, meta.model)
     except KeyError:
@@ -52,6 +62,8 @@ def _check_provider(meta: RunMeta, allow_mock: bool) -> None:
             raise RunError(f"model must be {DEFAULT_MODEL}, got {meta.model}")
         if meta.temperature is None or meta.temperature != 0:
             raise RunError("temperature must be the number 0")
+        if _looks_like_mock_output(meta, results):
+            raise RunError("run content looks like mock output")
     else:
         raise RunError(f"provider {meta.provider} is not promotable")
     expected_tool = canonical_sha256(build_tool_schema(strict=caps.supports_strict))
@@ -95,10 +107,14 @@ def _check_prompt(app_root: Path, meta: RunMeta) -> None:
         raise RunError(f"meta.prompt_sha256 does not match prompts/{meta.prompt_version}.md")
 
 
-def _existing_is_mock(meta_path: Path) -> bool:
-    """Anything but a readable meta with `mock` exactly true counts as a real result."""
+def _existing_is_mock(meta_path: Path, results_path: Path) -> bool:
+    """Anything but a readable meta with `mock` exactly true counts as a real result.
+
+    A missing meta alongside an existing results file is a real result too (its provenance
+    was lost, not proven mock): only when neither file exists is there nothing to protect.
+    """
     if not meta_path.exists():
-        return True
+        return not results_path.exists()
     try:
         existing = json.loads(meta_path.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError):
@@ -129,13 +145,13 @@ def main(argv: list[str] | None = None, env: Mapping[str, str] | None = None) ->
     try:
         app_root = Path(env.get("APP_ROOT") or DEFAULT_APP_ROOT).resolve()
         run_bytes, results, meta = load_run(app_root, args.stem)
-        _check_provider(meta, args.allow_mock)
+        _check_provider(meta, args.allow_mock, results)
         _check_contents(app_root, args.stem, results, meta)
         _check_prompt(app_root, meta)
         root = repo_root(app_root)
         results_path, meta_path = root / RESULTS_FILE, root / RESULTS_META_FILE
         is_mock = meta.provider == MOCK
-        if is_mock and not args.force and not _existing_is_mock(meta_path):
+        if is_mock and not args.force and not _existing_is_mock(meta_path, results_path):
             raise RunError(f"{RESULTS_META_FILE} holds a real result; use --force to replace it")
     except RunError as exc:
         return _fail(str(exc))

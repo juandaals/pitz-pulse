@@ -40,16 +40,25 @@ def baseline_meta(app_root):
         "prompt_sha256": load_prompt(app_root, "v1").sha256,
         "tool_schema_sha256": canonical_sha256(build_tool_schema(strict=True)),
         "temperature": 0.0,
+        "total_input_tokens": 1500,
         "n": len(CASE_MESSAGES),
         "failures": [],
         "run_at": "2026-09-27T10:00:00Z",
     }
 
 
-def write_run(app_root, *, stem=BASELINE_STEM, items=None, meta_overrides=None):
-    """Writes the baseline pair (correct hashes) with ONE optional mutation applied."""
+def write_run(
+    app_root, *, stem=BASELINE_STEM, items=None, meta_overrides=None, corrupt_bytes=False
+):
+    """Writes the baseline pair (correct hashes) with ONE optional mutation applied.
+
+    ``corrupt_bytes`` appends a byte to the run file after ``write_pair`` computed
+    ``results_sha256`` from the original bytes, so the file no longer matches its own hash.
+    """
     items = baseline_items() if items is None else items
     meta = {**baseline_meta(app_root), **(meta_overrides or {})}
     run_path, meta_path = run_paths(app_root, stem)
     write_pair(run_path, meta_path, (json.dumps(items, ensure_ascii=False) + "\n").encode(), meta)
+    if corrupt_bytes:
+        run_path.write_bytes(run_path.read_bytes() + b" ")
     return stem
