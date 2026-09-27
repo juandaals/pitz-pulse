@@ -8,6 +8,7 @@ from pathlib import Path
 from pitz_pulse.config import ConfigError, LLMSettings, parse_llm_settings
 
 QUEUE_WAIT_S = 30.0  # longest wait for a model slot before 503 busy (Spec 02 §2)
+MAX_PENDING_STALE_S = 604800  # 7 days; keeps timestamp arithmetic far from overflow
 
 
 @dataclass(frozen=True)
@@ -50,5 +51,9 @@ def parse_api_settings(env: Mapping[str, str]) -> ApiSettings:
         raise ConfigError(
             f"PENDING_STALE_SECONDS={stale} is below the minimum {floor} derived from "
             "LLM_TIMEOUT_SECONDS, LLM_MAX_RETRIES and INVALID_OUTPUT_RETRIES; raise it or unset it"
+        )
+    if stale > MAX_PENDING_STALE_S:
+        raise ConfigError(
+            f"PENDING_STALE_SECONDS={stale} is above the maximum {MAX_PENDING_STALE_S} (7 days)"
         )
     return ApiSettings(llm, api_key, db_path, stale)

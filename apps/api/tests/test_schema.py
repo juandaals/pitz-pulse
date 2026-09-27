@@ -102,6 +102,8 @@ def test_resumen_char_limit():
         (True, "", False),
         (True, "   ", False),
         (True, "x" * 301, False),
+        (True, "¿Qué?" + " " * 300, False),  # raw length: trailing spaces count
+        (True, "x" * 300, True),
         (False, None, True),
         (False, "", False),
         (False, "¿Cuál?", False),

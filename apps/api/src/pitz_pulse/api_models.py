@@ -4,28 +4,29 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictStr, field_validator
 
+from pitz_pulse.corrections import CORRECTABLE_FIELDS
 from pitz_pulse.repository import ListFilters, StoredRequest
 from pitz_pulse.schema import CONTRACT_FIELDS, Area, Categoria, Idioma, Prioridad, ensure_utf8
 
 Status = Literal["pending", "classified", "failed"]
 _NOT_NULLABLE = ("categoria", "prioridad", "area_sugerida", "idioma", "resumen", "requiere_info")
-_CORRECTABLE = (*_NOT_NULLABLE, "pregunta_seguimiento")
 
 
 class PatchBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    categoria: Categoria | None = None
-    prioridad: Prioridad | None = None
-    area_sugerida: Area | None = None
-    idioma: Idioma | None = None
-    resumen: StrictStr | None = None
-    requiere_info: StrictBool | None = None
+    # Plain types with a None default: OpenAPI shows no null branch; omitted fields stay unset.
+    categoria: Categoria = None  # type: ignore[assignment]
+    prioridad: Prioridad = None  # type: ignore[assignment]
+    area_sugerida: Area = None  # type: ignore[assignment]
+    idioma: Idioma = None  # type: ignore[assignment]
+    resumen: StrictStr = None  # type: ignore[assignment]
+    requiere_info: StrictBool = None  # type: ignore[assignment]
     pregunta_seguimiento: StrictStr | None = None
     author: StrictStr
     reason: StrictStr | None = None
 
-    @field_validator(*_NOT_NULLABLE)
+    @field_validator(*_NOT_NULLABLE, mode="before")
     @classmethod
     def _not_null(cls, value: Any) -> Any:
         if value is None:
@@ -57,7 +58,7 @@ class PatchBody(BaseModel):
 
     def changes(self) -> dict[str, Any]:
         present = self.model_dump(mode="json", exclude_unset=True)
-        return {name: present[name] for name in _CORRECTABLE if name in present}
+        return {name: present[name] for name in CORRECTABLE_FIELDS if name in present}
 
 
 class ListQuery(BaseModel):

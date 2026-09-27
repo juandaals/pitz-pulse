@@ -80,6 +80,15 @@ def test_contract_rule_violation_is_rolled_back(service):
     assert history == [] and row.reviewed is False
 
 
+def test_padded_question_over_300_raw_characters_is_rejected(service):
+    with pytest.raises(ContractViolation):
+        service.correct(REQ.id, {"pregunta_seguimiento": "¿Qué?" + " " * 300}, "ana", None)
+    row, history = service.get(REQ.id)
+    assert (
+        history == [] and row.classification.pregunta_seguimiento == "¿Qué archivo intentó subir?"
+    )
+
+
 def test_unknown_id_is_not_found(service):
     with pytest.raises(NotFound):
         service.correct("nope", {"categoria": "datos"}, "ana", None)

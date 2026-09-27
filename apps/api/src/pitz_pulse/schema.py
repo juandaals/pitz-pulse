@@ -147,7 +147,7 @@ def _check_rules(model: _ModelFields) -> None:
     if model.requiere_info:
         if question is None or not question.strip():
             raise ValueError("pregunta_seguimiento is required when requiere_info is true")
-        if len(question.strip()) > MAX_QUESTION_CHARS:
+        if len(question) > MAX_QUESTION_CHARS:  # raw: stored text must meet the contract
             raise ValueError(
                 f"pregunta_seguimiento must have at most {MAX_QUESTION_CHARS} characters"
             )

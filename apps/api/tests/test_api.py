@@ -161,3 +161,12 @@ def test_openapi_carries_enum_values_and_error_bodies(client):
             "/ErrorBody"
         ), status
     assert "404" in schema["paths"]["/solicitudes/{request_id}"]["patch"]["responses"]
+
+
+def test_openapi_patch_body_marks_only_the_question_nullable(client):
+    schema = client.get("/openapi.json").json()
+    properties = schema["components"]["schemas"]["PatchBody"]["properties"]
+    for name in ("categoria", "prioridad", "area_sugerida", "idioma", "resumen", "requiere_info"):
+        assert {"type": "null"} not in properties[name].get("anyOf", []), name
+        assert properties[name].get("type") != "null", name
+    assert {"type": "null"} in properties["pregunta_seguimiento"]["anyOf"]

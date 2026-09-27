@@ -41,6 +41,13 @@ def test_explicit_stale_window_must_be_an_integer():
         parse_api_settings({**BASE, "PENDING_STALE_SECONDS": "soon"})
 
 
+def test_explicit_stale_window_above_seven_days_names_the_maximum():
+    with pytest.raises(ConfigError) as info:
+        parse_api_settings({**BASE, "PENDING_STALE_SECONDS": "604801"})
+    assert "PENDING_STALE_SECONDS" in str(info.value) and "604800" in str(info.value)
+    assert parse_api_settings({**BASE, "PENDING_STALE_SECONDS": "604800"}).pending_stale_s == 604800
+
+
 def test_db_path_defaults_under_app_root_and_relative_paths_are_rooted(tmp_path):
     settings = parse_api_settings(BASE)
     assert settings.db_path == settings.llm.app_root / "data" / "pitz_pulse.db"
