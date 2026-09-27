@@ -2,8 +2,8 @@
 
 Covered: email, CNPJ (numeric and 2026 alphanumeric), CPF, CURP, RFC, BR/MX phones.
 Not covered: names, addresses, CLABE/bank accounts, cards, NF-e keys, obfuscated emails,
-bare 8-9 digit phones without a phone keyword, lowercase space-separated RFCs,
-CPFs written with dots only whose four groups also form a valid IPv4 address.
+bare 8-9 digit phones without a phone keyword, lowercase space-separated RFCs.
+An IPv4 address of the exact CPF shape (3.3.3.2 digits) is masked as [CPF] by design.
 Unicode format characters (category Cf: zero-width spaces, soft hyphens, BOM...) are removed
 before NFKC so they cannot split PII. The "número"/"numero" phone keyword over-masks order or
 ticket numbers of 8-9 digits by design (privacy first, D14); only the prompt copy is masked.
@@ -25,12 +25,9 @@ _CNPJ = re.compile(
     r"(?![0-9A-Za-z])",
     re.IGNORECASE,
 )
-# The last separator is mandatory so bare 11-digit numbers stay phones; a dots-only form that
-# is also a valid IPv4 address is left alone.
-_CPF = re.compile(
-    rf"(?<![0-9A-Za-z])(?!{_IPV4}(?![0-9A-Za-z]))\d{{3}}[.-]?\d{{3}}[.-]?\d{{3}}[.-]\d{{2}}"
-    r"(?![0-9A-Za-z])"
-)
+# The last separator is mandatory so bare 11-digit numbers stay phones. Runs before the IPv4
+# guard: an address of this exact shape is masked as [CPF] (privacy first).
+_CPF = re.compile(r"(?<![0-9A-Za-z])\d{3}[.-]?\d{3}[.-]?\d{3}[.-]\d{2}(?![0-9A-Za-z])")
 _CURP = re.compile(
     r"(?<![0-9A-Za-z])[A-Z]{4}\d{6}[HMX][A-Z]{5}[A-Z0-9]\d(?![0-9A-Za-z])", re.IGNORECASE
 )

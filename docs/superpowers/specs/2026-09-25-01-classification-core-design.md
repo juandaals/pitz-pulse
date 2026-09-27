@@ -390,7 +390,7 @@ italics must not shield a phone).
 |---|---|---|---|
 | 1 | email | `local@domain.tld`, plus-tags, subdomains, non-ASCII local parts, Slack `<mailto:…\|…>` | `[EMAIL]` |
 | 2 | CNPJ | `NN.NNN.NNN/NNNN-NN` with each separator optional (incl. `12345678/0001-90`), 14 bare digits, 2026 alphanumeric format formatted or bare, case-insensitive | `[CNPJ]` |
-| 3 | CPF | `NNN.NNN.NNN-NN` with `.`/`-` tolerated in any position and the last separator required (so bare 11 digits stay phones); a dots-only form that is also a valid IPv4 address is left alone | `[CPF]` |
+| 3 | CPF | `NNN.NNN.NNN-NN` with `.`/`-` tolerated in any position and the last separator required (so bare 11 digits stay phones); runs before the IPv4 guard, so an address of this exact 3.3.3.2 shape is masked as `[CPF]` (accepted, privacy first) | `[CPF]` |
 | 4 | CURP | `[A-Z]{4}\d{6}[HMX][A-Z]{5}[A-Z0-9]\d`, case-insensitive | `[CURP]` |
 | 5 | RFC | compact `[A-ZÑ&]{3,4}\d{6}[A-Z0-9]{3}` (case-insensitive); separated `[A-ZÑ&]{3,4}[-\s]\d{6}[-\s][A-Z0-9]{3}` with the hyphen form case-insensitive and the space form uppercase-only (a case-insensitive space form would eat ordinary prose like "del 230415 com"); all forms require the 6 digits to be a valid YYMMDD date | `[RFC]` |
 | 6 | phone | optional `+`/`(`, 10–14 digits total with runs of space/`-`/`.`/`()` between groups, matched only in the text outside guard spans; local `NNNN[- ]NNNN`, `NNNNN[- ]NNNN`; bare 8–9 digit numbers, and separated local forms with an optional `(DD)`/`DD` area code (matched before the guards, so `tel (11) 2045-2078` is not taken for a year list), only when immediately preceded (within up to 3 connector characters) by a phone keyword — `tel`, `teléfono`/`telefono`, `telefone`, `cel`, `celular`, `whats`, `whatsapp`, `número`/`numero`, `fone`, `ligue`, `llame`, `llamar` | `[PHONE]` |
@@ -407,7 +407,7 @@ IDs/timestamps not covered by a guard, and 14-character alphanumeric codes endin
 match the CNPJ shape but are not real CNPJs (`[CNPJ]`).
 Not covered (documented): names, addresses, CLABE/bank accounts, card numbers, NF-e access keys,
 obfuscated emails ("arroba"), secrets, attachments, bare 8–9 digit phones with no phone keyword
-nearby, lowercase space-separated RFCs, dots-only CPFs that are also valid IPv4 addresses, homoglyph
+nearby, lowercase space-separated RFCs, homoglyph
 tags, IDN email domains.
 Synthetic PII in fixtures uses invalid check digits, `example.com` domains and repeated-digit phones.
 

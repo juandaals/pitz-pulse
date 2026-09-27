@@ -149,6 +149,8 @@ def test_mask_request_masks_source_area_too():
         # G5: separator typos in CPF/CNPJ.
         ("CPF 123.456.789.09", "[CPF]"),
         ("CPF 123-456-789-09", "[CPF]"),
+        ("CPF 123.123.123.12", "[CPF]"),
+        ("123.123.123.12", "[CPF]"),
         ("CNPJ 12.345.678.0001-00", "[CNPJ]"),
         ("CNPJ 12.345.678/0001.00", "[CNPJ]"),
     ],
@@ -159,8 +161,8 @@ def test_masks_final_review_gaps(text, placeholder):
     assert not re.search(r"\d{3,}", result.text), result.text
 
 
-@pytest.mark.parametrize("text", ["ip 192.168.100.10", "versão 10.0.19045.1"])
-def test_valid_ipv4_is_not_a_cpf(text):
+@pytest.mark.parametrize("text", ["ip 192.168.1.10", "192.168.1.10", "versão 10.0.19045.1"])
+def test_other_dotted_widths_stay_guarded(text):
     assert mask(text).text == text
 
 
