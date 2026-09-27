@@ -10,6 +10,7 @@ from typing import Any
 
 from pitz_pulse import db
 from pitz_pulse.classifier import Classifier
+from pitz_pulse.corrections import apply_correction
 from pitz_pulse.errors import DbBusy, NotFound
 from pitz_pulse.intake import IntakeMixin
 from pitz_pulse.repository import ListFilters, Repository, StoredRequest
@@ -104,3 +105,11 @@ class TriageService(IntakeMixin):
             and not row.reviewed
             and needs_review(row.classification.confianza, self.threshold)
         )
+
+    # -- corrections -------------------------------------------------------------------
+
+    def correct(
+        self, request_id: str, changes: dict[str, Any], author: str, reason: str | None
+    ) -> StoredRequest:
+        with self.connection() as repo:
+            return apply_correction(repo, request_id, changes, author, reason, self._now())
