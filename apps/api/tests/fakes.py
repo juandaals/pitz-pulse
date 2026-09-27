@@ -1,3 +1,5 @@
+import threading
+
 from pitz_pulse.models_catalog import ProviderCaps
 from pitz_pulse.providers.base import LLMCall
 
@@ -44,3 +46,28 @@ class FakeAdapter:
         if isinstance(item, BaseException):
             raise item
         return item
+
+
+class GateAdapter(FakeAdapter):
+    """invoke() blocks until `release` is set, so a test can hold calls in flight."""
+
+    def __init__(self, responses):
+        super().__init__(responses)
+        self.release = threading.Event()
+        self.entered = threading.Semaphore(0)
+        self.active = 0
+        self.peak = 0
+        self._lock = threading.Lock()
+
+    def invoke(self, system, user, tool, deadline_s):
+        with self._lock:
+            self.active += 1
+            self.peak = max(self.peak, self.active)
+        self.entered.release()
+        try:
+            if not self.release.wait(timeout=10):
+                raise AssertionError("GateAdapter was never released")
+            return super().invoke(system, user, tool, deadline_s)
+        finally:
+            with self._lock:
+                self.active -= 1
