@@ -16,6 +16,14 @@ def test_third_party_loggers_pinned_even_at_debug():
     assert logging.getLogger("pitz_pulse.llm").isEnabledFor(logging.DEBUG)
 
 
+def test_every_transport_logger_pinned_after_importing_anthropic():
+    import anthropic  # noqa: F401  (registers its transport loggers first)
+
+    configure_logging("DEBUG")
+    for name in ("httpx", "httpcore", "httpx2", "httpcore2"):
+        assert not logging.getLogger(name).isEnabledFor(logging.INFO), name
+
+
 def test_llm_call_lines_survive_warning_level():
     configure_logging("WARNING")
     assert logging.getLogger("pitz_pulse.llm").isEnabledFor(logging.INFO)

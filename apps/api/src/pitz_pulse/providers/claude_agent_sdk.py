@@ -16,6 +16,7 @@ import claude_agent_sdk
 from claude_agent_sdk import (
     AssistantMessage,
     ClaudeAgentOptions,
+    ClaudeSDKError,
     CLINotFoundError,
     ResultError,
     ResultMessage,
@@ -32,6 +33,7 @@ _ALLOWED_INHERITED = ("PATH", "TMPDIR", "LANG", "LC_ALL")
 _REJECTED = {"authentication_failed", "billing_error", "invalid_request"}
 _RETRYABLE_STATUS = {408, 409, 429}
 _CLEANUP_MARGIN_S = 15  # the SDK's shielded transport close can take this long
+_CONTROL_TIMEOUT = "Control request timeout"  # the SDK raises a bare Exception for this
 _SLOTS: threading.BoundedSemaphore | None = None
 _SLOTS_LOCK = threading.Lock()
 
@@ -56,6 +58,11 @@ def parse_json_object(text: str) -> dict[str, Any] | None:
     return value if isinstance(value, dict) else None
 
 
+def _log_stderr_line(line: str) -> None:
+    """CLI stderr can echo request or credential details: log its size, never its text."""
+    logger.info("agent_sdk_stderr", extra={"fields": {"length": len(line)}})
+
+
 def _status_kind(status: int) -> str:
     return "unavailable" if status in _RETRYABLE_STATUS or status >= 500 else "rejected"
 
@@ -65,9 +72,10 @@ class ClaudeAgentSdkAdapter:
 
     def __init__(self, settings: LLMSettings, query_fn=query):
         if settings.deadline_s < _CLEANUP_MARGIN_S + settings.timeout_s:
+            # With zero retries the deadline is timeout + 10 s, always below timeout + cleanup.
             raise ConfigError(
                 "LLM_TIMEOUT_SECONDS and LLM_MAX_RETRIES leave no room for one full attempt "
-                "plus SDK cleanup; raise LLM_TIMEOUT_SECONDS or LLM_MAX_RETRIES"
+                "plus SDK cleanup; set LLM_MAX_RETRIES to at least 1"
             )
         self.model = settings.model
         self.caps = settings.caps
@@ -78,14 +86,19 @@ class ClaudeAgentSdkAdapter:
         cli = Path(claude_agent_sdk.__file__).parent / "_bundled" / "claude"
         if not os.access(cli, os.X_OK):
             raise ConfigError("Claude Code CLI not found or not executable in claude-agent-sdk")
-        with tempfile.TemporaryDirectory(prefix="pitz-sdk-check-") as home:
-            probe = subprocess.run(
-                [str(cli), "-v"],
-                env=self.build_env(home),
-                capture_output=True,
-                timeout=20,
-                check=False,
-            )
+        try:
+            with tempfile.TemporaryDirectory(prefix="pitz-sdk-check-") as home:
+                probe = subprocess.run(
+                    [str(cli), "-v"],
+                    env=self.build_env(home),
+                    capture_output=True,
+                    timeout=20,
+                    check=False,
+                )
+        except (subprocess.SubprocessError, OSError) as exc:
+            raise ConfigError(
+                f"Claude Code CLI version check could not run ({type(exc).__name__})"
+            ) from None
         if probe.returncode != 0:
             raise ConfigError("Claude Code CLI failed its version check")
         os.environ["CLAUDE_AGENT_SDK_SKIP_VERSION_CHECK"] = "1"  # checked once, here
@@ -128,6 +141,7 @@ class ClaudeAgentSdkAdapter:
             verbatim_prompts=True,
             thinking={"type": "disabled"},
             extra_args={"no-session-persistence": None},
+            stderr=_log_stderr_line,  # piped to us instead of inherited raw by the terminal
         )
 
     def invoke(self, system: str, user: str, tool: dict[str, Any], deadline_s: float) -> LLMCall:
@@ -157,8 +171,12 @@ class ClaudeAgentSdkAdapter:
             return exc  # raised after the error result was yielded: map it with the messages
         except CLINotFoundError:
             raise LLMError("rejected", "CLINotFoundError", elapsed_ms(start)) from None
-        except Exception as exc:  # CLIConnectionError, ProcessError, bare SDK exceptions
+        except ClaudeSDKError as exc:  # CLIConnectionError, ProcessError, decode errors
             raise LLMError("unavailable", type(exc).__name__, elapsed_ms(start)) from None
+        except Exception as exc:
+            if type(exc) is Exception and str(exc).startswith(_CONTROL_TIMEOUT):
+                raise LLMError("unavailable", "ControlRequestTimeout", elapsed_ms(start)) from None
+            raise  # a programming error is not a transient provider failure
         return None
 
     async def _collect(self, user: str, options: ClaudeAgentOptions, budget: float, sink: list):

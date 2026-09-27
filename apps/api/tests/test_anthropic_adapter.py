@@ -139,6 +139,16 @@ def test_retry_after_is_capped():
     assert sleeps == [30]
 
 
+@pytest.mark.parametrize("raw,expected", [("-5", 0.0), ("nan", 0.5), ("soon", 0.5), ("0", 0.0)])
+def test_retry_after_negative_or_garbage_never_crashes(raw, expected):
+    sleeps = []
+    response = httpx.Response(429, request=REQUEST, headers={"retry-after": raw})
+    error = anthropic.APIStatusError("x", response=response, body=None)
+    adapter, _ = adapter_with([error, OK], sleeps)
+    adapter.invoke("s", "u", TOOL, 300)
+    assert sleeps == [expected]
+
+
 def test_rejected_is_never_retried():
     adapter, stub = adapter_with([status_error(401), OK])
     with pytest.raises(LLMError) as info:

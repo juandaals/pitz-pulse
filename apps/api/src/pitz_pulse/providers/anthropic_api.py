@@ -4,6 +4,7 @@ The adapter owns transport retries (ChatAnthropic max_retries=0): the SDK honors
 without a bound, so only an adapter loop keeps every call inside the deadline (G33).
 """
 
+import math
 import time
 from collections.abc import Callable
 from typing import Any
@@ -31,12 +32,16 @@ def map_anthropic_error(exc: Exception, latency_ms: float) -> LLMError:
 
 
 def _retry_after(exc: Exception) -> float | None:
+    """Seconds the server asked us to wait: None when absent or unparseable, never negative."""
     response = getattr(exc, "response", None)
     raw = response.headers.get("retry-after") if response is not None else None
     try:
-        return float(raw) if raw is not None else None
+        value = float(raw) if raw is not None else None
     except ValueError:
         return None
+    if value is None or not math.isfinite(value):
+        return None
+    return max(0.0, value)
 
 
 class AnthropicApiAdapter:
@@ -79,7 +84,8 @@ class AnthropicApiAdapter:
                 error = map_anthropic_error(exc, elapsed_ms(start))
                 if error.kind == "rejected" or retries >= self._max_retries:
                     raise error from None
-                wait = min(RETRY_WAIT_CAP_S, _retry_after(exc) or 0.5 * 2**retries)
+                asked = _retry_after(exc)
+                wait = min(RETRY_WAIT_CAP_S, 0.5 * 2**retries if asked is None else asked)
                 if deadline.remaining() < wait + self._timeout_s:
                     raise error from None
                 self._sleep(wait)

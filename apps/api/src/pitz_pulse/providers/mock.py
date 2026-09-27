@@ -1,6 +1,7 @@
 """Deterministic keyword rules so the stack runs without credentials. Never model quality.
 
-ponytail: keywords come from typical ES/PT wording; never read eval scores of mock runs.
+The keywords were picked from the case messages' own wording, so a mock run scores well on the
+case set by construction: never read eval scores of mock runs as model quality.
 """
 
 import re

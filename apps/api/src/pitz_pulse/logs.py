@@ -7,6 +7,8 @@ THIRD_PARTY_LOGGERS = (
     "anthropic",
     "httpx",
     "httpcore",
+    "httpx2",  # anthropic >= 1.8 transport
+    "httpcore2",
     "langchain",
     "langchain_core",
     "langchain_anthropic",
