@@ -173,3 +173,45 @@ def test_ipv4_guard_ignores_out_of_range_octets():
 
 def test_format_characters_are_stripped():
     assert mask("ok​­⁠‎﻿!").text == "ok!"
+
+
+@pytest.mark.parametrize(
+    "text,placeholder",
+    [
+        # H1: a formatted CPF glued to letters is still a CPF.
+        ("CPF123.456.789-09", "[CPF]"),
+        ("x123.456.789-09", "[CPF]"),
+        ("meu CPF123.456.789-09", "[CPF]"),
+        ("CPF123456.789-09", "[CPF]"),
+        # M4: area-coded landlines whose local part looks like a year range.
+        ("+55 11 2045-2078", "[PHONE]"),
+        ("(11) 2045-2078", "[PHONE]"),
+        ("whatsapp: +55 11 2045-2078", "[PHONE]"),
+        ("meu telefone é +55 11 2045-2078", "[PHONE]"),
+        ("tel (011) 2045-2078", "[PHONE]"),
+        ("tel 11-2045-2078", "[PHONE]"),
+    ],
+)
+def test_masks_residual_review_gaps(text, placeholder):
+    result = mask(text)
+    assert placeholder in result.text, result.text
+    assert not re.search(r"\d{4,}", result.text), result.text
+
+
+@pytest.mark.parametrize(
+    "text", ["reunión 2024-2025", "CPF123456789-09x", "ventas 11 2024-2025", "R$ 11 2045"]
+)
+def test_residual_fixes_do_not_over_mask(text):
+    assert mask(text).text == text
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        # Accepted over-masking (prompt copy only, privacy first): pinned so a change is visible.
+        ("SKU BR-SPO-001-2024-01", "SKU [CNPJ]"),
+        ("tel 2024-2025", "tel [PHONE]"),
+    ],
+)
+def test_accepted_over_masking_is_pinned(text, expected):
+    assert mask(text).text == expected

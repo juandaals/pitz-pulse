@@ -25,9 +25,14 @@ _CNPJ = re.compile(
     r"(?![0-9A-Za-z])",
     re.IGNORECASE,
 )
-# The last separator is mandatory so bare 11-digit numbers stay phones. Runs before the IPv4
-# guard: an address of this exact shape is masked as [CPF] (privacy first).
-_CPF = re.compile(r"(?<![0-9A-Za-z])\d{3}[.-]?\d{3}[.-]?\d{3}[.-]\d{2}(?![0-9A-Za-z])")
+# The last separator is mandatory so bare 11-digit numbers stay phones. A formatted CPF (two or
+# more separators) is unambiguous, so only digits bound it ("CPF123.456.789-09" is masked); the
+# looser 9+2 shape keeps alphanumeric bounds. Runs before the IPv4 guard: an address of the exact
+# CPF shape is masked as [CPF] (privacy first).
+_CPF = re.compile(
+    r"(?<!\d)(?:\d{3}[.-]\d{3}[.-]?|\d{6}[.-])\d{3}[.-]\d{2}(?!\d)"
+    r"|(?<![0-9A-Za-z])\d{9}[.-]\d{2}(?![0-9A-Za-z])"
+)
 _CURP = re.compile(
     r"(?<![0-9A-Za-z])[A-Z]{4}\d{6}[HMX][A-Z]{5}[A-Z0-9]\d(?![0-9A-Za-z])", re.IGNORECASE
 )
@@ -56,8 +61,14 @@ _PHONE = re.compile(
 _PHONE_KEYWORD = re.compile(
     r"(?<![0-9A-Za-z])(?:tel[eé]fono|telefone|tel|celular|cel|whatsapp|whats|"
     r"n[uú]mero|fone|ligue|llame|llamar)(?![A-Za-z])\s*[^\d\s]{0,3}\s*"
-    r"((?:(?:\(\d{2}\)|\d{2})\s?)?\d{4,5}[-. ]\d{4}|\d{8,9})(?!\d)",
+    r"((?:(?:\(0?\d{2}\)|0?\d{2})[\s-]?)?\d{4,5}[-. ]\d{4}|\d{8,9})(?!\d)",
     re.IGNORECASE,
+)
+# A local number behind an explicit area code ("(11) ", "+55 11 ") is a phone even when its
+# digits look like a year range, so this runs before the guards too.
+_PHONE_AREA = re.compile(
+    r"(?<![0-9A-Za-z+])(?:\+\d{1,3}[\s.-]?(?:\(0?\d{2}\)|0?\d{2})|\(0?\d{2}\))"
+    r"[\s.-]?\d{4,5}[-. ]\d{4}(?![0-9A-Za-z])"
 )
 # Spans never masked as phones; phones are searched only in the text between them.
 _GUARDS = (
@@ -102,6 +113,8 @@ def mask(text: str) -> MaskResult:
     for pattern in (_RFC_COMPACT, _RFC_SEPARATED_HYPHEN, _RFC_SEPARATED_SPACE):
         current, found = _mask_rfc(pattern, current)
         _add(counts, "rfc", found)
+    current, found = _PHONE_AREA.subn("[PHONE]", current)
+    _add(counts, "phone", found)
     current, found = _mask_keyword_phones(current)
     _add(counts, "phone", found)
     current, found = _mask_phones(current)
