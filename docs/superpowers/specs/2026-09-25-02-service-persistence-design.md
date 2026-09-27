@@ -6,9 +6,7 @@
   `classifier.build_classifier(settings, adapter=None)` → `Classifier.classify(req)` →
   `ClassifyOutcome(classification, attempts)`, raising `ClassificationError(kind, attempts)` or
   `ClassificationCrash(error_type, attempts)`; `logs.configure_logging` / `log_event`
-- **Status:** rev 5.1 (plan-gate corrections; rev 5 spec-gate findings applied, see
-  `docs/superpowers/reviews/2026-09-27-02-spec-review.md` and
-  `docs/superpowers/reviews/2026-09-27-02-plan-review.md`)
+- **Status:** implemented on feat/spec-02-service-persistence (rev 5.1)
 - **Decisions used:** D5–D9, D11, D12, D17, D21, D25, D28, D29, D30 (see `docs/MASTER.md`)
 
 ## 1. Goal
