@@ -14,6 +14,7 @@ class DomainError(Exception):
     def __init__(self) -> None:
         super().__init__(self.code)
         self.attempts = 0  # model attempts spent on this request, for the outcome log
+        self.row_status: str | None = None  # the row's status when known, for the outcome log
 
 
 class IdConflict(DomainError):

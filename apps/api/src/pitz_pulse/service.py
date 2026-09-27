@@ -51,15 +51,16 @@ class TriageService(IntakeMixin):
 
     @contextmanager
     def connection(self) -> Iterator[Repository]:
-        conn = db.connect(self.db_path)
         try:
-            yield Repository(conn)
+            conn = db.connect(self.db_path)  # a lock while connecting is DbBusy too
+            try:
+                yield Repository(conn)
+            finally:
+                conn.close()
         except sqlite3.OperationalError as exc:
             if "database is locked" in str(exc):
                 raise DbBusy() from None
             raise
-        finally:
-            conn.close()
 
     def _now(self) -> str:
         return db.format_ts(self.clock())
@@ -87,7 +88,7 @@ class TriageService(IntakeMixin):
     # -- reads -------------------------------------------------------------------------
 
     def get(self, request_id: str) -> tuple[StoredRequest, list[dict[str, Any]]]:
-        with self.connection() as repo:
+        with self.connection() as repo, repo.read_transaction():
             row = repo.get(request_id)
             if row is None:
                 raise NotFound()

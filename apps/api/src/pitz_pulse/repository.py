@@ -84,6 +84,21 @@ class Repository:
                 self.conn.execute("ROLLBACK")
             raise
 
+    @contextmanager
+    def read_transaction(self) -> Iterator["Repository"]:
+        """Deferred BEGIN … COMMIT so several reads see one snapshot; reuses an open one."""
+        if self.conn.in_transaction:
+            yield self
+            return
+        self.conn.execute("BEGIN")
+        try:
+            yield self
+            self.conn.execute("COMMIT")
+        except BaseException:
+            if self.conn.in_transaction:
+                self.conn.execute("ROLLBACK")
+            raise
+
     def get(self, request_id: str) -> StoredRequest | None:
         row = self.conn.execute("SELECT * FROM requests WHERE id = ?", (request_id,)).fetchone()
         return _to_stored(row) if row else None
@@ -151,11 +166,12 @@ class Repository:
             clauses.append(_NEEDS_REVIEW if filters.needs_review else f"NOT {_NEEDS_REVIEW}")
             params.append(threshold)
         where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
-        total = self.conn.execute(f"SELECT count(*) FROM requests{where}", params).fetchone()[0]
-        rows = self.conn.execute(
-            f"SELECT * FROM requests{where} ORDER BY created_at DESC, id ASC LIMIT ? OFFSET ?",
-            (*params, limit, offset),
-        ).fetchall()
+        with self.read_transaction():  # total and page from one snapshot
+            total = self.conn.execute(f"SELECT count(*) FROM requests{where}", params).fetchone()[0]
+            rows = self.conn.execute(
+                f"SELECT * FROM requests{where} ORDER BY created_at DESC, id ASC LIMIT ? OFFSET ?",
+                (*params, limit, offset),
+            ).fetchall()
         return [_to_stored(row) for row in rows], total
 
     def insert_correction(

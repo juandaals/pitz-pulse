@@ -27,6 +27,8 @@ from pitz_pulse.schema import RequestInput
 
 logger = logging.getLogger("pitz_pulse.service")
 Answer = tuple[StoredRequest, bool, int]  # row, this call classified it, model attempts
+# Set on an unexpected error raised after the model answered, so the outcome counts paid calls.
+BILLED_ATTEMPTS = "pitz_billed_attempts"
 
 
 class IntakeMixin:
@@ -35,18 +37,21 @@ class IntakeMixin:
     def create(self, req: RequestInput) -> tuple[StoredRequest, bool]:
         start = time.monotonic()
         status, row, attempts, error = 500, None, 0, None
+        kind, row_status = None, None
         try:
             row, created, attempts = self._create(req)
             status = 201 if created else 200
             return row, created
         except DomainError as exc:
             status, attempts, error = exc.http_status, exc.attempts, exc.code
+            kind, row_status = getattr(exc, "kind", None), exc.row_status
             raise
         except ClassificationCrash as exc:
             attempts, error = len(exc.attempts), "internal_error"
             raise
         except Exception as exc:
             error = type(exc).__name__
+            attempts = getattr(exc, BILLED_ATTEMPTS, 0)
             raise
         finally:
             log_event(
@@ -54,8 +59,9 @@ class IntakeMixin:
                 "request_outcome",
                 id=req.id,
                 http_status=status,
-                status=row.status if row else None,
+                status=row.status if row else row_status,
                 error=row.error if row else error,
+                kind=kind,
                 attempts=attempts,
                 latency_ms=round((time.monotonic() - start) * 1000, 1),
             )
@@ -70,17 +76,22 @@ class IntakeMixin:
                 if row is None:
                     repo.insert_pending(req, message_hash, token, db.format_ts(now))
                 elif row.message_hash != message_hash:
-                    raise IdConflict()
+                    raise _with_status(IdConflict(), row.status)
                 elif row.status == "classified":
                     return row, False, 0
                 elif row.status == "pending" and not self._is_stale(row, now):
-                    raise InProgress(self._retry_after(row, now))
+                    raise _with_status(InProgress(self._retry_after(row, now)), "pending")
                 else:
                     repo.reclaim(req.id, token, db.format_ts(now))
                 stored = repo.get(req.id)
         # Retries classify what was stored first (same id + message; stored source_area).
         request = RequestInput(id=stored.id, message=stored.message, source_area=stored.source_area)
-        return self._classify(request, token)
+        try:
+            return self._classify(request, token)
+        except DbBusy as exc:  # after the reservation: the row stays pending until it is stale
+            exc.retry_after_s = self._retry_after(stored, self.clock())
+            exc.row_status = "pending"
+            raise
 
     def _is_stale(self, row: StoredRequest, now: datetime) -> bool:
         cutoff = db.format_ts(now - timedelta(seconds=self.pending_stale_s))
@@ -95,7 +106,7 @@ class IntakeMixin:
             answer = self._fail(req.id, token, "busy", attempts=0)
             if answer is not None:
                 return answer
-            raise Busy()
+            raise _with_status(Busy(), "failed")
         attempts = 0
         try:
             try:
@@ -109,7 +120,7 @@ class IntakeMixin:
             answer = self._fail(req.id, token, exc.kind, attempts)
             if answer is not None:
                 return answer
-            failed = ClassificationFailed(exc.kind)
+            failed = _with_status(ClassificationFailed(exc.kind), "failed")
             failed.attempts = attempts
             raise failed from None
         except DomainError:
@@ -120,6 +131,7 @@ class IntakeMixin:
             answer = self._best_effort_fail(req.id, token, attempts)
             if answer is not None:
                 return answer
+            setattr(exc, BILLED_ATTEMPTS, attempts)
             raise
 
     def _complete(self, request_id: str, token: str, outcome: ClassifyOutcome) -> Answer:
@@ -194,4 +206,10 @@ class IntakeMixin:
         else:
             error = ClassificationFailed(row.error or "internal_error")
         error.attempts = attempts
+        error.row_status = row.status
         raise error
+
+
+def _with_status(error: DomainError, row_status: str) -> DomainError:
+    error.row_status = row_status
+    return error
