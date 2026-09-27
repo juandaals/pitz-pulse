@@ -1,9 +1,14 @@
 # Spec 02 — Service & persistence
 
 - **Covers:** R2.1–R2.5, R1.10 (review queue), R4.1 (idempotency + endpoint tests)
-- **Depends on:** Spec 01 (`Classifier`, `schema.py`, `LLMSettings`)
-- **Status:** draft (rev 3 — aligned with Spec 01 rev 3)
-- **Decisions used:** D5–D9, D11, D12, D17, D21 (see `docs/MASTER.md`)
+- **Depends on:** Spec 01 as built (branch `feat/spec-01-classification-core`, PR #1):
+  `schema.RequestInput`, `schema.Classification`, `config.parse_llm_settings(env)` → `LLMSettings`,
+  `classifier.build_classifier(settings, adapter=None)` → `Classifier.classify(req)` →
+  `ClassifyOutcome(classification, attempts)`, raising `ClassificationError(kind, attempts)` or
+  `ClassificationCrash(error_type, attempts)`; `logs.configure_logging` / `log_event`
+- **Status:** draft (rev 5 — spec-gate findings applied, see
+  `docs/superpowers/reviews/2026-09-27-02-spec-review.md`)
+- **Decisions used:** D5–D9, D11, D12, D17, D21, D25, D28, D29, D30 (see `docs/MASTER.md`)
 
 ## 1. Goal
 
@@ -15,71 +20,114 @@ with versioned migrations, protected by an API key. Endpoint paths follow the ca
 
 | File | Responsibility |
 |---|---|
-| `db.py` | `connect(path)` → new connection per call (`isolation_level=None`, WAL, `busy_timeout=5000`, `foreign_keys=ON`); `migrate(conn)` |
-| `repository.py` | SQL only: `reserve`, `complete`, `fail`, `get`, `list`, `apply_correction`, `list_corrections`. Every write inside explicit `BEGIN IMMEDIATE … COMMIT` |
-| `service.py` | `TriageService`: idempotency, review flag, correction rules. No HTTP, no SQL |
-| `api.py` | `create_app(settings, adapter=None)` factory (served with `uvicorn --factory`; no module-level app); builds the classifier with `build_classifier(settings, adapter)` (Spec 01); routers; `require_api_key` dependency on the `/solicitudes` router only; exception handlers; `X-Pitz-Provider: mock` response header in mock mode (D25) |
-| `api_models.py` | HTTP request/response models (enums typed so OpenAPI carries their values) |
-| `settings_api.py` | `ApiSettings(LLMSettings)`: `API_KEY` (required, non-empty), `DB_PATH`, `PENDING_STALE_SECONDS` |
-| `migrations/001_init.sql` | Initial schema |
+| `db.py` | `connect(path)` → new connection (`isolation_level=None`, `check_same_thread=False`; PRAGMAs in order `busy_timeout=5000`, `journal_mode=WAL`, `foreign_keys=ON`; creates the parent dir); `migrate(conn)` |
+| `repository.py` | `Repository(conn)`: SQL plus row ↔ typed mapping (`INTEGER` → `bool`, enum strings → StrEnums, JSON columns → dicts). `transaction()` context manager: `BEGIN IMMEDIATE`, `COMMIT`, `ROLLBACK` on any exception (then re-raise). Methods: `get`, `insert_pending`, `reclaim`, `complete`, `fail`, `list`, `insert_correction`, `update_fields`, `list_corrections` |
+| `service.py` | `TriageService` (one per app): idempotency, lost-claim mapping, review flag, correction rules, model-slot semaphore. Opens and closes its own connection per call (`db.connect(db_path)`); drives `repo.transaction()`. No HTTP |
+| `errors.py` | Domain errors, all subclasses of `DomainError`: `IdConflict`, `InProgress(retry_after_s)`, `NotFound`, `NotClassified`, `ContractViolation(fields)`, `ClassificationFailed(kind)`, `Busy`, `DbBusy` |
+| `api.py` | `create_app(settings: ApiSettings \| None = None, adapter=None)` factory, served with `uvicorn --factory pitz_pulse.api:create_app` (uvicorn calls it with **no arguments**); routes; `require_api_key` on the `/solicitudes` router only |
+| `http_errors.py` | Exception handlers (domain errors, `RequestValidationError`, **`starlette.exceptions.HTTPException`**) and a catch-all HTTP middleware: any other exception → 500 `internal_error`, logs `unhandled_error` with the class name only, **never re-raised** (otherwise Starlette re-raises and uvicorn prints a traceback with chained exception text, D9) |
+| `api_models.py` | HTTP models: `CreateBody`, `PatchBody`, `ListQuery` (all `extra="forbid"`, strict types), `Item`, `ItemDetail`, `Page`, `ErrorBody` (enums typed so OpenAPI carries their values) |
+| `settings_api.py` | `ApiSettings` (frozen dataclass, **composition**): `llm: LLMSettings`, `api_key` (`API_KEY`, required, printable ASCII, `repr=False`), `db_path` (`DB_PATH`), `pending_stale_s` (`PENDING_STALE_SECONDS`); `parse_api_settings(env)`. Composition, not inheritance: nothing may `asdict`/`replace` settings (secrets, `__post_init__` checks) |
+| `review.py` | `needs_review(confianza, threshold) -> bool` (`confianza < threshold`, D12); imported by Spec 03 scoring so both use one comparator |
+| `migrations/001_init.sql` | Initial schema (packaged next to the code: `Path(__file__).parent / "migrations"`) |
 
-A FastAPI dependency yields `db.connect(settings.DB_PATH)` per request and closes it. Routes are sync
-`def` (FastAPI thread pool, D5). Run with a single uvicorn worker (documented); correctness does
-not depend on it (reservation is DB-level).
+**Factory.** `create_app()` with `settings=None`: `configure_logging(os.environ LOG_LEVEL or
+"INFO")` → `parse_api_settings(os.environ)` → `configure_logging(settings.llm.log_level)` →
+`migrate` → `build_classifier(settings.llm, adapter)` → one `TriageService`. Any `ConfigError`
+aborts startup (non-zero exit, message names the variable, never its value): missing `API_KEY`, or
+`LLM_PROVIDER=anthropic_api` with an empty `ANTHROPIC_API_KEY` (D29). Tests pass `settings` and a
+`FakeAdapter` explicitly.
 
-Dependencies introduced: `fastapi`, `uvicorn` (runtime); `httpx` (dev, `TestClient`).
+**Concurrency bound.** `TriageService` owns one `threading.BoundedSemaphore(llm.concurrency)`
+(`LLM_CONCURRENCY`) shared by every request of the app (and by Spec 06d, which reuses the app's
+service). A request that needs a model call waits at most `QUEUE_WAIT_S = 30` for a slot
+(constructor argument, so tests inject a small value). At most `2 × LLM_CONCURRENCY` requests may
+wait; beyond that, or on timeout → `Busy`. Slot handling: `acquired = sem.acquire(timeout=…)`;
+release in `finally` only if acquired, and before `complete()`. Already-classified and conflicting
+requests never take a slot. `/health` is `async def` with no DB access, so a saturated thread pool
+cannot fail the compose healthcheck (a recorded exception to D5). Multiple uvicorn workers would
+multiply the bound: idempotency does not depend on a single worker, the cost bound does; compose
+runs one worker.
+
+Dependencies introduced: `fastapi`, `uvicorn` (runtime, declared directly even though `uvicorn`
+is already transitive). `TestClient` uses `httpx2`, already in the dev group.
 
 ## 3. Data model (`migrations/001_init.sql`)
 
 Contract fields keep their contract names; everything else is English.
 
 ```
-┌──────────────────────────────────────────┐        ┌─────────────────────────────────┐
-│ requests                                 │        │ corrections                     │
-├──────────────────────────────────────────┤        ├─────────────────────────────────┤
-│ id TEXT PK                               │◄──────┐│ id INTEGER PK AUTOINCREMENT     │
-│ message TEXT NOT NULL                    │       └┤ request_id TEXT FK NOT NULL     │
-│ source_area TEXT                         │        │ previous_values TEXT (JSON)     │
-│ message_hash TEXT NOT NULL (sha256)      │        │ new_values TEXT (JSON;          │
-│ status TEXT CHECK pending|classified|    │        │   {} = confirmed as correct)    │
-│        failed                            │        │ author TEXT NOT NULL            │
-│ claim_token TEXT                         │        │ reason TEXT                     │
-│ categoria, prioridad, area_sugerida,     │        │ created_at TEXT NOT NULL        │
-│ idioma  TEXT  CHECK (enum values)        │        └─────────────────────────────────┘
-│ resumen TEXT, requiere_info INTEGER,     │
-│ pregunta_seguimiento TEXT,               │   current (possibly corrected) values
-│ confianza REAL, version_prompt TEXT      │
-│ needs_review INTEGER NOT NULL DEFAULT 0  │
-│ corrected INTEGER NOT NULL DEFAULT 0     │
-│ original_classification TEXT (JSON)      │   immutable once written
-│ error TEXT                               │   last failure kind
-│ created_at TEXT, updated_at TEXT         │   UTC ISO-8601 ms + Z, written by Python only
-└──────────────────────────────────────────┘
-indexes: (categoria), (prioridad), (area_sugerida), (needs_review), (status), (created_at)
-schema_migrations(version TEXT PK, applied_at TEXT)
+┌───────────────────────────────────────────────┐   ┌──────────────────────────────────────┐
+│ requests                                      │   │ corrections                          │
+├───────────────────────────────────────────────┤   ├──────────────────────────────────────┤
+│ id TEXT PK                                    │◄─┐│ id INTEGER PK AUTOINCREMENT          │
+│ message TEXT NOT NULL                         │  └┤ request_id TEXT NOT NULL FK          │
+│ source_area TEXT                              │   │ previous_values TEXT NOT NULL        │
+│ message_hash TEXT NOT NULL (sha256)           │   │   CHECK json_valid                   │
+│ status TEXT NOT NULL CHECK pending|classified │   │ new_values TEXT NOT NULL CHECK       │
+│        |failed                                │   │   json_valid ({} = confirmed)        │
+│ claim_token TEXT                              │   │ author TEXT NOT NULL                 │
+│ categoria, prioridad, area_sugerida, idioma   │   │ reason TEXT                          │
+│   TEXT CHECK (enum values)                    │   │ created_at TEXT NOT NULL             │
+│ resumen TEXT, pregunta_seguimiento TEXT       │   └──────────────────────────────────────┘
+│ requiere_info INTEGER CHECK IN (0,1)          │   index corrections(request_id, id)
+│ confianza REAL CHECK BETWEEN 0 AND 1          │
+│ version_prompt TEXT                           │
+│ provider TEXT, model TEXT                     │   who produced the classification (G21)
+│ reviewed INTEGER NOT NULL DEFAULT 0 CHECK 0|1 │   set by any PATCH
+│ corrected INTEGER NOT NULL DEFAULT 0 CHECK 0|1│   "ever corrected"
+│ original_classification TEXT CHECK json_valid │   10 contract fields; immutable once written
+│ error TEXT                                    │   last failure kind; NULL unless failed
+│ created_at TEXT NOT NULL, updated_at NOT NULL │   UTC `YYYY-MM-DDTHH:MM:SS.mmmZ`, Python only
+│ CHECK status <> 'classified' OR (all contract │
+│   fields, provider, model, original NOT NULL) │
+└───────────────────────────────────────────────┘
+indexes: (categoria), (prioridad), (area_sugerida), (status), (created_at, id)
+schema_migrations(version TEXT PK, applied_at TEXT NOT NULL)
 ```
 
 The stored `message` is the original text (D9); only the LLM egress is masked; logs never contain it.
 
-Migration runner: lists `migrations/*.sql` sorted; for each pending file on an autocommit
-connection: `BEGIN IMMEDIATE` → re-check `schema_migrations` → execute statements → insert version
-→ `COMMIT` (`ROLLBACK` on error, then raise). Running twice is a no-op; two processes starting at
-once cannot apply a file twice.
+Migration runner: lists `migrations/*.sql` sorted; for each pending file: `BEGIN IMMEDIATE` →
+re-check `schema_migrations` → split the file into statements with `sqlite3.complete_statement`
+and `execute` each one → insert version → `COMMIT`; `ROLLBACK` on error, then raise.
+**`executescript` is forbidden**: it commits the open transaction first, so a failing file would
+leave partial tables (verified). Running twice is a no-op; two processes starting at once cannot
+apply a file twice.
 
 ## 4. API
 
 `/health`, `/docs`, `/openapi.json` are open (no data, schema only). Everything under `/solicitudes`
-requires `X-API-Key` (compared with `secrets.compare_digest`).
+requires `X-API-Key`: read with `APIKeyHeader(auto_error=False)`; missing or wrong → 401;
+compared as bytes with `hmac.compare_digest` (a non-ASCII header must be a 401, not a 500). FastAPI
+validates the body before dependencies, so an unauthenticated request with a malformed body gets
+422 — documented, no data is exposed.
 
 | Method | Path | Success | Errors |
 |---|---|---|---|
 | GET | `/health` | 200 `{status, provider, model, prompt_version}` — the adapter's effective values | — |
-| POST | `/solicitudes` | 201 this call classified (new id or retried failed/stale) · 200 already classified | 401 · 409 `id_conflict` · 409 `in_progress` · 422 · 500 `internal_error` · 502 `classification_failed` · 503 `db_busy` |
-| GET | `/solicitudes` | 200 `{items, total, limit, offset}` | 401 · 422 |
-| GET | `/solicitudes/{id}` | 200 `ItemDetail` | 401 · 404 |
-| PATCH | `/solicitudes/{id}` | 200 `Item` | 401 · 404 · 409 `not_classified` · 422 · 503 |
+| POST | `/solicitudes` | 201 this call classified (new id or retried failed/stale) · 200 already classified | 401 · 409 `id_conflict` · 409 `in_progress` · 422 · 500 · 502 · 503 `busy` · 503 `db_busy` |
+| GET | `/solicitudes` | 200 `{items, total, limit, offset}` | 401 · 422 · 503 `db_busy` |
+| GET | `/solicitudes/{id}` | 200 `ItemDetail` | 401 · 404 · 422 · 503 `db_busy` |
+| PATCH | `/solicitudes/{id}` | 200 `Item` | 401 · 404 · 409 `not_classified` · 422 · 503 `db_busy` |
 
-**POST body:** `{id, message, source_area?}` (limits in Spec 01 §2). Unknown fields → 422.
+**Error codes** (body `{error, detail, fields?, kind?}`):
+
+| HTTP | `error` | Notes |
+|---|---|---|
+| 401 | `unauthorized` | |
+| 404 | `not_found` | unknown id, or unknown route (Starlette `HTTPException`) |
+| 405 | `method_not_allowed` | |
+| 409 | `id_conflict` · `in_progress` · `not_classified` | `in_progress` carries `Retry-After` = seconds until the row becomes stale |
+| 422 | `validation_error` | `fields: [{loc, msg}]`; cross-field contract rules use `loc: ["body"]` |
+| 500 | `internal_error` | constant `detail` |
+| 502 | `classification_failed` | `kind`: `llm_unavailable \| llm_rejected \| invalid_output` |
+| 503 | `busy` · `db_busy` | `Retry-After`: 30 (`busy`), 1 (`db_busy`) |
+
+**POST body:** `{id, message, source_area?}` (limits in Spec 01 §2). Unknown fields → 422. Text
+that cannot be encoded as UTF-8 (lone surrogates) → 422 (validator added to `RequestInput`).
+
+**Path `{id}`:** same constraints as the body `id`; violations → 422.
 
 **Item** (list entries, POST and PATCH responses):
 
@@ -88,50 +136,64 @@ requires `X-API-Key` (compared with `secrets.compare_digest`).
 | `id`, `message`, `source_area` | input |
 | `status` | `pending \| classified \| failed` |
 | contract fields `categoria … version_prompt` | current values; `null` unless `status = classified` |
-| `needs_review`, `corrected` | bool |
-| `error` | failure kind or `null` |
+| `provider`, `model` | who produced the classification; `null` unless classified |
+| `needs_review` | computed on read: classified, not `reviewed`, and `needs_review(confianza, CONFIDENCE_THRESHOLD)` — so a threshold chosen later by Spec 03 applies to existing rows |
+| `corrected` | bool, "ever corrected" (not reset if a later PATCH restores the original values) |
+| `error` | failure kind or `null`: `llm_unavailable \| llm_rejected \| invalid_output \| internal_error \| busy` |
 | `created_at`, `updated_at` | UTC ISO-8601 |
 
-**ItemDetail** = Item + `original_classification` (object or `null`) + `corrections[]`
-(`{previous_values, new_values, author, reason, created_at}`, oldest first).
+After a PATCH the current `version_prompt`, `provider` and `model` still name what produced the
+original; `corrected = true` means the current values are (partly) human.
 
-**GET filters:** `categoria`, `prioridad`, `area_sugerida`, `needs_review`, `status` (no default:
-all statuses); `limit` 1–100 (default 20), `offset` ≥ 0; order `created_at DESC, id ASC`; filters
-apply to current values (G12). Invalid enum → 422. Offset past the end → empty `items`, real `total`.
+**ItemDetail** = Item + `original_classification` (the 10 contract fields, or `null`) +
+`corrections[]` (`{previous_values, new_values, author, reason, created_at}`, oldest first).
 
-**PATCH body:** any subset of correctable fields (G11: `categoria, prioridad, area_sugerida, idioma,
-resumen, requiere_info, pregunta_seguimiento`) + `author` (1–100 chars after strip, required) +
-`reason?` (≤ 500). Only fields present in the body are merged (`exclude_unset`). Explicit `null`
-allowed only for `pregunta_seguimiento`. Unknown or non-correctable fields (`id`, `confianza`,
-`version_prompt`, …) → 422.
+**Mock marking (D25, G21):** `X-Pitz-Provider: mock` is set when the running provider is mock
+**or** any row in the response has `provider = mock` (e.g. rows kept in the named volume after a
+real key was added). Mock rows are not re-classified automatically (that would break "no second
+model call"); the README says to `make down -v` to start clean.
 
-**Error body (all errors):** `{error: <code>, detail: <text>, fields?: [{loc, msg}]}` — `fields`
-present on 422 (body validation and contract-rule violations alike). Implemented with handlers for
-`RequestValidationError`, `HTTPException` and domain errors.
+**GET filters** (`ListQuery`, `extra="forbid"`: unknown params such as `?area=` → 422 naming the
+allowed ones): `categoria`, `prioridad`, `area_sugerida`, `needs_review`, `status` (no default: all
+statuses); `limit` 1–100 (default 20), `offset` 0–2³¹−1; order `created_at DESC, id ASC`; filters
+apply to current values (G12). Invalid enum → 422. Offset past the end → empty `items`, real
+`total`.
+
+**PATCH body** (`PatchBody`, strict types — `"yes"` is not a bool): any subset of correctable
+fields (G11: `categoria, prioridad, area_sugerida, idioma, resumen, requiere_info,
+pregunta_seguimiento`) + `author` (1–100 chars after strip, stored stripped, required) + `reason?`
+(≤ 500, stored stripped; empty → `null`). Only fields present in the body are merged
+(`exclude_unset`). Explicit `null` allowed only for `pregunta_seguimiento`; `null` on any other
+field → 422. No implicit fixes: changing `requiere_info` must come with a consistent
+`pregunta_seguimiento` (explicit `null` when turning it off), else the contract rule fails → 422.
+Unknown or non-correctable fields (`id`, `confianza`, `version_prompt`, …) → 422.
 
 ## 5. Class diagram
 
 ```
-┌──────────────────────────┐ Depends ┌──────────────────────────────┐
-│ api.py                   │────────►│ TriageService                │
-│ create_app(settings,     │         │ - repo_factory(conn)         │
-│            adapter=None) │         │ - classifier: Classifier     │
-│ require_api_key()        │         │ - threshold: float           │
-│ get_conn() (per request) │         │ - pending_stale_s: int       │
-└──────────────────────────┘         │ + create(req) -> (Item, created: bool)
-                                     │ + get(id) -> ItemDetail      │
-                                     │ + list(filters, page) -> Page│
-                                     │ + correct(id, patch) -> Item │
-                                     └──────┬───────────────┬───────┘
-                                            ▼               ▼
-                                  ┌──────────────────┐  ┌──────────────────┐
-                                  │ Repository(conn) │  │ Classifier (01)  │
-                                  └──────────────────┘  └──────────────────┘
+┌──────────────────────────────┐ Depends ┌───────────────────────────────────────┐
+│ api.py                       │────────►│ TriageService (one per app)           │
+│ create_app(settings=None,    │         │ - db_path, classifier, threshold      │
+│            adapter=None)     │         │ - pending_stale_s, queue_wait_s, clock│
+│ require_api_key()            │         │ - slots: BoundedSemaphore             │
+│ http_errors: handlers +      │         │ + create(req) -> (Item, created: bool)│
+│   catch-all middleware       │         │ + get(id) -> ItemDetail               │
+└──────────────────────────────┘         │ + list(query) -> Page                 │
+                                         │ + correct(id, patch) -> Item          │
+                                         └──────┬────────────────────┬───────────┘
+                                                ▼ per call            ▼
+                                  ┌──────────────────────────┐  ┌──────────────────┐
+                                  │ Repository(db.connect()) │  │ Classifier (01)  │
+                                  │ + transaction()          │  └──────────────────┘
+                                  └──────────────────────────┘
 
-Domain errors → HTTP:
+Domain errors → HTTP (errors.DomainError subclasses):
  IdConflict 409 · InProgress 409 · NotFound 404 · NotClassified 409 · ContractViolation 422
- ClassificationError 502 · DbBusy (sqlite "database is locked") 503 · other Exception 500
+ ClassificationFailed 502 · Busy 503 · DbBusy (sqlite "database is locked") 503
+ ClassificationCrash / any other exception → 500 via the catch-all middleware
 ```
+
+`clock` is an injectable `() -> datetime` (UTC) so tests make rows stale without waiting.
 
 ## 6. Flow — idempotent POST
 
@@ -139,56 +201,71 @@ Domain errors → HTTP:
 POST {id, message, source_area}
   │ validate body (422)
   ▼
-hash = sha256(original message, unstripped);  token = uuid4()
-BEGIN IMMEDIATE
+hash = sha256(original message, unstripped);  token = uuid4();  now = clock()
+with repo.transaction():                         (BEGIN IMMEDIATE … COMMIT / ROLLBACK)
   row = get(id)
-  ├─ none ─────────────────────────► INSERT status=pending, claim_token=token ─┐
-  ├─ hash differs ─────────────────► ROLLBACK → 409 id_conflict                │
-  ├─ classified ───────────────────► ROLLBACK → 200 stored item (no model call)│
-  ├─ pending & fresh ──────────────► ROLLBACK → 409 in_progress                │
-  ├─ pending & stale (G16) ────────► UPDATE claim_token=token, updated_at ─────┤
-  └─ failed (G15) ─────────────────► UPDATE status=pending, claim_token=token ─┤
-COMMIT                                                                         │
-  ▼ ◄──────────────────────────────────────────────────────────────────────────┘
-classifier.classify(req) → ClassifyOutcome   (outside any transaction: no DB lock during the LLM call;
-                                   the service stores outcome.classification)
-  ├─ ok ─────────────────► complete(id, token, …): UPDATE … WHERE id=? AND status='pending'
-  │                          AND claim_token=?  → status=classified, fields,
-  │                          original_classification, needs_review = confianza < threshold,
-  │                          claim_token=NULL
-  │                          0 rows? (lost claim) → log warning, return current row
-  │                        → 201 (created=True)
-  ├─ ClassificationError ► fail(id, token, kind) (same guard) → 502
-  └─ any other exception ► best-effort fail(id, token, "internal_error") → re-raise → 500
-                           (response detail is a constant; logs carry the class name only)
+  ├─ none ─────────────────► INSERT status=pending, claim_token=token, created/updated=now ─┐
+  ├─ hash differs ─────────► IdConflict → 409 id_conflict                                  │
+  ├─ classified ───────────► return row → 200 (no model call)                              │
+  ├─ pending, fresh ───────► InProgress(retry_after) → 409 in_progress                     │
+  ├─ pending, stale (G16) ─► UPDATE claim_token=token, updated_at=now ─────────────────────┤
+  └─ failed (G15) ─────────► UPDATE status=pending, claim_token=token, error=NULL,         │
+                             updated_at=now ───────────────────────────────────────────────┤
+  ▼ ◄──────────────────────────────────────────────────────────────────────────────────────┘
+stale  ⇔  updated_at < now − pending_stale_s   (cutoff computed in Python, same string format)
+retries classify the stored row (same id + message; stored source_area)
+
+take model slot (≤ queue_wait_s, ≤ 2×concurrency waiters) ── no slot ──► fail(busy) → 503 busy
+  ▼
+classifier.classify(req)          (outside any transaction; slot released right after)
+  ├─ ok ─────────────────► complete(id, token, classification, provider, model):
+  │                          UPDATE … WHERE id=? AND status='pending' AND claim_token=?
+  │                          → status=classified, fields, original_classification, provider,
+  │                          model, error=NULL, claim_token=NULL, updated_at
+  │                          "database is locked" → retry up to 3× (0.2 s, 0.4 s, 0.8 s; safe:
+  │                          token-guarded) → still locked: log request_complete_failed → 503
+  │                          db_busy (row stays pending; re-claimed after the stale window)
+  ├─ ClassificationError ► fail(id, token, kind) (same guard, updated_at) → 502 + kind
+  ├─ ClassificationCrash ► fail(id, token, "internal_error") → 500
+  └─ other exception ────► best-effort fail(id, token, "internal_error"); if that write fails,
+                           log request_fail_write_failed (class name) → 500
+
+complete/fail matched 0 rows (lost claim, G24): log request_claim_lost; answer from the current
+row: classified → 200 · pending → 409 in_progress · failed → 502 with its kind. Never 201.
 ```
 
-`PENDING_STALE_SECONDS` default 540; at startup it must be ≥
-`(1 + INVALID_OUTPUT_RETRIES) × deadline_s + 60`, where `deadline_s` is Spec 01's per-invoke
-deadline budget (`LLM_TIMEOUT_SECONDS × (1 + LLM_MAX_RETRIES) + LLM_MAX_RETRIES × 30 + 10`; 220 s
-with defaults → minimum 500 s), else startup error. That budget is checked between attempts, not
-enforced as a wall-clock kill: an attempt already in flight can overrun it (the httpx read timeout
-resets on every received chunk, so a slow trickling response is not cut at `LLM_TIMEOUT_SECONDS`).
-The stale window therefore does not guarantee that a worker is dead when its row is re-claimed.
-**The G24 claim token is the guarantee against overwrite**: `complete`/`fail` match
-`claim_token`, so a late worker's write is a no-op. The residual cost is that re-claiming a still
-live worker can cause a duplicate paid call; the Spec 02 plan must note this (and may add an
-overrun term to the stale-window minimum).
+Every POST logs exactly one `request_outcome` event (`id`, `http_status`, `status`, `error`,
+`attempts`, `latency_ms`) — including 200 replays, 409s and `busy`; never message text. Per-attempt
+cost stays in Spec 01's `llm_call` lines. Every write sets `updated_at`.
+
+`PENDING_STALE_SECONDS`: when unset it defaults to the derived minimum
+`(1 + INVALID_OUTPUT_RETRIES) × deadline_s + QUEUE_WAIT_S + 60` (530 s with defaults), so raising
+`LLM_TIMEOUT_SECONDS` never blocks startup; an explicit value below that minimum is a startup
+error naming both variables and the computed floor. `deadline_s` is Spec 01's per-invoke budget
+(`LLM_TIMEOUT_SECONDS × (1 + LLM_MAX_RETRIES) + LLM_MAX_RETRIES × 30 + 10`), checked between
+attempts, not a wall-clock kill (D28): an attempt already in flight can overrun it (the httpx
+read timeout resets on every received chunk). The stale window therefore does not guarantee that
+a worker is dead when its row is re-claimed. **The claim token is the guarantee against
+overwrite**; the residual cost — re-claiming a live worker can cause a duplicate paid call — is
+accepted and listed in the README pending items. This phase also corrects the
+`LLMSettings.deadline_s` docstring ("hard bound" → budget, D28).
 
 ## 7. Flow — PATCH correction
 
 ```
 PATCH {fields…, author, reason?}
   ▼ validate body shape (422)
-BEGIN IMMEDIATE
-  row = get(id) ── none ──► ROLLBACK 404 ;  status ≠ classified ──► ROLLBACK 409 not_classified
-  merged = current ⊕ present fields ──► Classification.model_validate(merged) ── fail ──► ROLLBACK 422
-  diff = fields whose value changed
-  INSERT corrections(previous_values=current[diff], new_values=merged[diff], author, reason)
-  UPDATE requests SET <diff>, corrected = corrected OR (diff non-empty), needs_review = 0, updated_at
-COMMIT ──► 200
+with repo.transaction():
+  row = get(id) (typed) ── none ──► NotFound 404 ;  status ≠ classified ──► NotClassified 409
+  merged = current contract values ⊕ present fields
+  Classification.model_validate(merged) ── fail ──► ContractViolation 422 (rolled back)
+  diff = fields whose value changed (typed comparison: bool vs bool)
+  insert_correction(previous_values=current[diff], new_values=merged[diff], author, reason)
+  update_fields(<diff>, corrected = corrected OR diff non-empty, reviewed = 1, updated_at)
+──► 200
 ```
 Empty diff = human confirmed the model output (`new_values = {}`); `corrected` stays as it was.
+History JSON stores typed values (`true`, not `1`).
 
 ## 8. State diagram — request lifecycle
 
@@ -196,48 +273,64 @@ Empty diff = human confirmed the model output (`new_values = {}`); `corrected` s
                         POST (new id)
                              │
                              ▼
-                      ┌─────────────┐ classify ok ┌───────────────────┐
+                      ┌─────────────┐ classify ok ┌────────────────────┐
          ┌───────────►│   pending   │────────────►│ classified         │
-         │            │ claim_token │             │ needs_review=conf<t│
+         │            │ claim_token │             │ reviewed=0         │
          │            └──┬───────┬──┘             └──┬──────────┬──────┘
-         │  classify err │       │ stale:            │ PATCH     │ PATCH (diff)
-         │  or internal  │       │ next POST         │ (no diff) │
+         │ classify err, │       │ stale:            │ PATCH     │ PATCH (diff)
+         │ internal, busy│       │ next POST         │ (no diff) │
          │               ▼       │ re-claims         │           ▼
          │        ┌──────────┐   └──► pending        │    classified,
          └────────│  failed  │        (new token)    │    corrected=1
-   POST again     └──────────┘                       ▼    needs_review=0
-   (same id+text)                          needs_review=0  (more PATCHes → more rows)
+   POST again     └──────────┘                       ▼    reviewed=1
+   (same id+text)                             reviewed=1  (more PATCHes → more rows)
 ```
 
 ## 9. Gaps, edge cases, contradictions (this spec)
 
 - **G5** same id, different text → 409 (D8). Whitespace-only difference counts as different (no
   silent normalization of user text); documented.
-- **G6** concurrent same-id POSTs → `BEGIN IMMEDIATE` reservation; exactly one model call.
+- **G6** concurrent same-id POSTs → reservation; exactly one model call.
 - **G11 / G12** correctable fields; filters on current values.
 - **G15** failed → 502, re-POST retries; failing again stays failed (502).
-- **G16 / G24** stale pending re-claim with claim token; late completion is a no-op.
-- **G17** input limits.
-- Same id + same text + different `source_area` → treated as the same request (case defines
-  idempotency by id + message).
-- `API_KEY` unset/empty → startup error. `database is locked` beyond busy timeout → 503 `db_busy`.
+- **G16 / G24** stale pending re-claim with claim token; late completion is a no-op and the late
+  caller gets the current state, never 201.
+- **G17** input limits, path id, offset bound, unencodable text.
+- **G21** provenance per row; mock header also for stored mock rows.
+- Same id + same text + different `source_area` → the same request (idempotency is id + message).
+- `API_KEY` unset/empty/non-ASCII, or explicit real provider without its credential (D29) →
+  startup error.
+- More than `LLM_CONCURRENCY` classifications at once → waiters (≤ 2× concurrency) wait ≤ 30 s,
+  then 503 `busy`; `/health` stays responsive.
+- `llm_rejected` (e.g. provider 401 with a bad key) → 502 with `kind`, row keeps it.
+- Settings are never serialized (no `asdict`, never in `/health`, keys `repr=False`).
+- `database is locked` beyond busy timeout → 503 `db_busy`; after a paid classification,
+  `complete` is retried first.
+- A statement error inside a transaction always rolls back (no connection left mid-transaction).
 - Concurrent PATCHes → serialized; the second's `previous_values` equal the first's `new_values`.
+- Container stopped mid-call → row pending until stale; 409 carries `Retry-After`; README runbook.
+- `POST /solicitudes/` (trailing slash) → 307 from Starlette; README examples use the exact path.
+- `make web-types` (Spec 05) builds the app with `LLM_PROVIDER=mock API_KEY=web-types
+  DB_PATH=<temp file>` set by the Makefile target, so it needs no secrets and touches no real DB.
 
 ## 10. Tests
 
 | File | Cases |
 |---|---|
-| `test_db.py` | migrate empty DB; second run no-op; failing migration leaves no partial table or version row; two connections serialize on `BEGIN IMMEDIATE`; CHECK enum lists equal the `schema.py` StrEnums (parity) |
-| `test_repository.py` | reserve/complete/fail; claim-token guard (late complete after re-claim → no-op); filters combined incl. `status`; pagination incl. offset past end; ordering tie-break |
-| `test_idempotency.py` | same id+text → 1 classifier call, 201 then 200; different text → 409; pending fresh → 409; stale pending re-claimed; failed → retried (201); failed twice → 502 and still failed; FakeAdapter raising `RuntimeError` → row failed `internal_error`, 500, re-POST retries; **two threads same id → exactly 1 classifier call**; `needs_review` recomputed when a failed row is later classified |
-| `test_corrections.py` | original immutable after 2 PATCHes; history order; empty diff = confirmation clears `needs_review`, keeps `corrected`; omitted vs explicit null; contract rule violation → 422 with `fields`; PATCH on pending/failed → 409; non-correctable or unknown field → 422; blank author → 422; concurrent PATCH previous_values |
-| `test_api.py` | 401 missing/wrong key; mock mode → `X-Pitz-Provider: mock` header; `/health` reports effective provider/model; `/health`, `/docs`, `/openapi.json` open; POST 201/200/409/422/502/503; GET list filters incl. `needs_review`, `status`; invalid enum filter 422; limit 0/101 → 422; GET 404; PATCH 404/422/200; every error body has `error` and `detail`; Item and ItemDetail keys; OpenAPI schema contains enum values |
-| `test_review_flag.py` | confianza below / equal / above threshold |
-| `test_settings_api.py` | `API_KEY` required; `PENDING_STALE_SECONDS` below the derived minimum → error |
+| `test_db.py` | migrate empty DB; second run no-op; migration `CREATE TABLE ok(x); CREATE TABLE bad(` → no `ok` table, no version row, `in_transaction` False; connection created in one thread works in another; `journal_mode` is `wal`; CHECKs reject a classified row with null fields, `requiere_info=2`, `confianza=7`, invalid JSON; CHECK enum lists equal the `schema.py` StrEnums (parity) |
+| `test_repository.py` | insert/reclaim/complete/fail; claim-token guard (late complete after re-claim → 0 rows); a CHECK violation inside `transaction()` leaves `in_transaction` False and a following write succeeds; typed round-trip (`requiere_info` is `bool`); reclaim/complete clear `error`; every write sets `updated_at`; filters combined incl. `status` and `needs_review`; pagination incl. offset past end; ordering tie-break |
+| `test_idempotency.py` | same id+text → 1 classifier call, 201 then 200; different text → 409; pending fresh → 409 with `Retry-After`; stale (via injected clock) → re-claimed; failed → retried (201) and `error` cleared; failed retry refreshes `updated_at` so a concurrent POST gets 409; failed twice → 502 and still failed; `ClassificationCrash` → row `internal_error`, 500, re-POST retries; **two threads same id**: the fake blocks on an `Event` until the second POST has received 409, then exactly 1 call; **concurrency 2, six distinct ids against a blocking fake → at most 2 simultaneous invokes**; slot timeout (injected `queue_wait_s`) → 503 `busy`, row failed `busy`, re-POST → 201; already-classified POST never waits for a slot; lost claim (A blocked, clock advanced, B re-claims, A completes) → A gets 409/200/502 per current row, never 201, `request_claim_lost` logged; `complete` locked once → retried and classified; locked always → 503 `db_busy`; each POST logs one `request_outcome` without message text |
+| `test_corrections.py` | PATCH only `categoria` on a `requiere_info=true` row → 200, history stores JSON `true`; original immutable after 2 PATCHes; history order; empty diff = confirmation sets `reviewed`, keeps `corrected`; omitted vs explicit null; `requiere_info` true→false without explicit null → 422; `{"categoria": null}` → 422; `"requiere_info": "yes"` → 422; contract rule violation → 422 `validation_error` with `fields`; PATCH on pending/failed → 409; non-correctable or unknown field → 422; blank author → 422; concurrent PATCH previous_values |
+| `test_api.py` | 401 missing/wrong/non-ASCII key; error codes exact for 401/404/405/409/422/500/502/503; unknown route → `not_found` body; unknown query param (`?area=`) → 422; offset 2³¹ → 422; path id > 64 chars → 422; lone surrogate → 422; mock mode → `X-Pitz-Provider: mock`; stored mock row read through an app with a non-mock fake → header present and `provider = mock`; `/health` reports effective provider/model and answers while every slot is taken; `/health`, `/docs`, `/openapi.json` open; GET list filters incl. `needs_review`, `status`; `needs_review` follows a changed threshold without rewriting rows; GET 404; Item and ItemDetail keys; OpenAPI schema contains enum values |
+| `test_app_factory.py` | `uvicorn.Config("pitz_pulse.api:create_app", factory=True).load()` with a mock env succeeds; `create_app()` without `API_KEY` → `ConfigError` naming it; `create_app()` with `adapter=None` in mock env uses `MockAdapter`; one POST writes exactly one JSON `llm_call` and one `request_outcome` line to stderr; a fake raising `ValueError("SENTINEL")` → 500 constant body and no captured log output (uvicorn loggers included) contains `SENTINEL` (`TestClient(raise_server_exceptions=False)`) |
+| `test_review_flag.py` | confianza below / equal / above threshold via `review.needs_review` |
+| `test_settings_api.py` | `API_KEY` required and ASCII; `PENDING_STALE_SECONDS` unset → derived minimum (530 with defaults; larger when `LLM_TIMEOUT_SECONDS` is raised); explicit value below the minimum → error naming both variables and the floor; `repr(settings)` contains no key; `LLM_PROVIDER=anthropic_api` without key → `ConfigError` naming the variable |
 
-All tests use `create_app(settings, adapter=FakeAdapter(...))` and a temp SQLite file.
+API tests use `create_app(settings, adapter=FakeAdapter(...))` and a temp SQLite file;
+`test_app_factory.py` covers the zero-argument path.
 
 ## 11. Acceptance
 
-`make test` green; manual run in mock mode: POST twice → one `llm_call` log line; PATCH then GET
-shows original + correction.
+`make test` green · `make lint` clean · every source file < 300 lines · manual run in mock mode
+(`uvicorn --factory pitz_pulse.api:create_app`): POST twice → one `llm_call` line and two
+`request_outcome` lines; PATCH then GET shows original + correction.
