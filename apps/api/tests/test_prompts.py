@@ -100,12 +100,12 @@ def _shingles(words: list[str], size: int) -> set[str]:
     return {" ".join(words[i : i + size]) for i in range(len(words) - size + 1)}
 
 
-def _golden_messages() -> list[str]:
+def _golden_messages() -> list[tuple[str, str]]:
+    """(id, message) pairs from both golden sets; fails (not skips) if a file is missing."""
     files = [REPO_ROOT / "mensajes.json", APP_ROOT / "eval" / "golden" / "edge_cases.messages.json"]
     return [
-        item["message"]
+        (item["id"], item["message"])
         for path in files
-        if path.exists()
         for item in json.loads(path.read_text(encoding="utf-8"))
     ]
 
@@ -121,14 +121,27 @@ def test_no_golden_message_leaks_into_prompts_or_tool_schema():
 
     texts = [p.read_text(encoding="utf-8") for p in (APP_ROOT / "prompts").glob("v*.md")]
     texts.append(json.dumps(build_tool_schema(strict=True), ensure_ascii=False))
-    messages = _golden_messages()
-    assert len(messages) >= 12 and len(texts) >= 2  # never pass vacuously on missing files
-    for message in messages:
-        for text in texts:
-            assert not _leaks(message, text), message
+    pairs = _golden_messages()
+    assert len(pairs) >= 12 and len(texts) >= 2  # never pass vacuously on missing files
+    # Collect first, assert on the id list: `assert not _leaks(...)` would let pytest's
+    # assertion introspection print the golden message text alongside the prompt text.
+    leaked = [mid for mid, msg in pairs for text in texts if _leaks(msg, text)]
+    assert not leaked, leaked
 
 
 def test_leak_check_detects_short_messages():
     assert _leaks(
         "Oigan, la plataforma está lenta.", "Example: oigan la plataforma está lenta -> bug"
     )
+
+
+def test_leak_failure_output_names_ids_only():
+    secret_message = "Oigan la plataforma está lenta hoy mismo por favor ayuda"
+    pairs = [("FAKE-ID-01", secret_message)]
+    texts = [f"Example: {secret_message.lower()} -> bug"]
+    with pytest.raises(AssertionError) as info:
+        leaked = [mid for mid, msg in pairs for text in texts if _leaks(msg, text)]
+        assert not leaked, leaked
+    output = str(info.value)
+    assert "FAKE-ID-01" in output
+    assert secret_message not in output
