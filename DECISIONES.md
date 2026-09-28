@@ -18,7 +18,7 @@ schema-valid arguments); **a single call without a graph** (the feedback retry i
 LangGraph leaves room for multi-turn clarification); **the Agent SDK as the only path** (it cannot
 set temperature 0, which the case requires).
 
-**Verification debt (G3).** No real model call was made during development (no personal
+**Verification debt (gate finding G3; MASTER G23, G35).** No real model call was made during development (no personal
 credentials were used, D29), so the live smoke call could not run: the provider's acceptance of
 the strict tool schema and the Agent SDK's plain-JSON reply are unverified against the real API.
 The whole flow was verified with the mock provider, and the provider contract is tested offline —
@@ -82,10 +82,9 @@ Slack ─event─► /slack/events ─ verify signature ─ ignore bots/subtypes
 The design: the signature replaces the API key on that route. The event id makes Slack's retries harmless
 because intake is idempotent. The reply only happens for the call that actually classified.
 `BackgroundTasks` runs the classification in the same process, in a thread pool
-(`anyio.to_thread`): a container restart loses whatever was in flight, and Slack's own retry
-(same event id, same text) simply re-runs `create()`, which is a no-op once the row is already
-`classified`. At scale the background task becomes a durable queue (e.g. a broker-backed worker)
-so a restart loses nothing instead of relying on Slack's retry as the only safety net.
+(`anyio.to_thread`). The event is acknowledged first, so Slack never redelivers it: a container
+restart loses whatever was in flight and nothing recovers it today. In production the background
+task becomes a durable queue so a restart loses nothing.
 
 ## 6. With two more weeks
 
