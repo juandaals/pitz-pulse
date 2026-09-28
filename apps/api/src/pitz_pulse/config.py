@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 ACTIVE_PROMPT_VERSION = "v1"  # single source; compose and .env.example must match (Spec 04a test)
 DEFAULT_MODEL = "claude-haiku-4-5"
 DEFAULT_APP_ROOT = Path(__file__).resolve().parents[2]  # apps/api (editable install)
+DEFAULT_CONFIDENCE_THRESHOLD = 0.7  # single source; also evaluate.py's CLI default
 RETRY_WAIT_CAP_S = 30
 _LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR")
 # Each would redirect provider auth, backend, headers, body or logging.
@@ -190,7 +191,9 @@ def parse_llm_settings(env: Mapping[str, str]) -> LLMSettings:
         max_retries=_number(env, "LLM_MAX_RETRIES", 3, 0, 5, int),
         invalid_output_retries=_number(env, "INVALID_OUTPUT_RETRIES", 1, 0, 3, int),
         concurrency=_number(env, "LLM_CONCURRENCY", 4, 1, 16, int),
-        confidence_threshold=_number(env, "CONFIDENCE_THRESHOLD", 0.7, 0, 1, float),
+        confidence_threshold=_number(
+            env, "CONFIDENCE_THRESHOLD", DEFAULT_CONFIDENCE_THRESHOLD, 0, 1, float
+        ),
         log_level=log_level,
         anthropic_api_key=credentials["ANTHROPIC_API_KEY"],
         claude_code_oauth_token=credentials["CLAUDE_CODE_OAUTH_TOKEN"],
@@ -218,3 +221,11 @@ def disable_tracing(environ: MutableMapping[str, str]) -> None:
 def load_llm_settings() -> LLMSettings:
     disable_tracing(os.environ)
     return parse_llm_settings(os.environ)
+
+
+def resolve_app_root(env: Mapping[str, str]) -> Path:
+    """APP_ROOT trimmed of surrounding whitespace, defaulting like `parse_llm_settings` does.
+
+    Used by `evaluate` and `promote`, which read only this one variable from the environment.
+    """
+    return Path(_get(env, "APP_ROOT") or DEFAULT_APP_ROOT).resolve()

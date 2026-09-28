@@ -96,7 +96,8 @@ def ensure_writable(directory: Path) -> None:
     Path(probe).unlink()
 
 
-def _label(item: object, index: int) -> object:
+def item_label(item: object, index: int) -> object:
+    """The item's `id` when it has one, else its index: for error messages, never the item text."""
     if isinstance(item, dict) and isinstance(item.get("id"), str):
         return item["id"]
     return index
@@ -121,7 +122,7 @@ def load_requests(path: Path) -> list[RequestInput]:
             fields = ", ".join(
                 ".".join(map(str, e["loc"])) for e in exc.errors(include_input=False)
             )
-            raise RunError(f"invalid input item {_label(item, index)}: {fields}") from None
+            raise RunError(f"invalid input item {item_label(item, index)}: {fields}") from None
         if request.id in seen:
             raise RunError(f"duplicate id {request.id}")
         seen.add(request.id)

@@ -25,6 +25,10 @@ Split in two phases because the docs need Spec 03's numbers:
 Make targets: `install test lint classify eval compare promote up down smoke web-types`.
 `classify`/`eval`/`compare`/`promote` run through `uv --directory apps/api run …` with absolute paths;
 `classify` prints provider/model/temperature and the call count before a paid run.
+`promote` maps `ALLOW_MOCK=1` to `--allow-mock` and `FORCE=1` to `--force` (the Makefile target
+only translates whatever flags the caller passes; it never hard-codes either one). The README's
+command to regenerate `resultados.json` uses `ALLOW_MOCK=1` and never includes `FORCE=1` (`--force`
+is for replacing an existing *real* result, not for routine regeneration).
 Prerequisites for non-Docker targets: `make`, `uv` (uv installs Python 3.12). Documented in README.
 
 All providers run inside Docker, selected only by env (`mock`, `anthropic_api`, `claude_agent_sdk`,
