@@ -65,7 +65,7 @@ Batch API (about half price), skip duplicates before calling the model, cache th
 prefix once it passes the model's minimum cacheable size, and route easy messages to the cheapest
 model while escalating low-confidence ones.
 
-## 5. Slack in production (design — not implemented yet, Spec 06d)
+## 5. Slack in production (implemented as an in-process background task; production uses a durable queue, Spec 06d)
 
 ```
 Slack ─event─► /slack/events ─ verify signature ─ ignore bots/subtypes/thread replies
@@ -80,8 +80,12 @@ Slack ─event─► /slack/events ─ verify signature ─ ignore bots/subtypes
 ```
 
 The design: the signature replaces the API key on that route. The event id makes Slack's retries harmless
-because intake is idempotent. The reply only happens for the call that actually classified. At
-scale the background task becomes a durable queue so a restart loses nothing.
+because intake is idempotent. The reply only happens for the call that actually classified.
+`BackgroundTasks` runs the classification in the same process, in a thread pool
+(`anyio.to_thread`): a container restart loses whatever was in flight, and Slack's own retry
+(same event id, same text) simply re-runs `create()`, which is a no-op once the row is already
+`classified`. At scale the background task becomes a durable queue (e.g. a broker-backed worker)
+so a restart loses nothing instead of relying on Slack's retry as the only safety net.
 
 ## 6. With two more weeks
 

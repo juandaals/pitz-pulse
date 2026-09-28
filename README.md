@@ -204,7 +204,32 @@ If port 8080 is already taken on your machine, set `WEB_PORT` before starting th
 Types are generated from the API's own OpenAPI document (`make web-types`) so the UI can never
 drift from the contract silently; CI fails if the generated files are stale.
 
-## 10. Pending items
+## 10. Slack (optional, Spec 06d, extra X1)
+
+`POST /slack/events` classifies Slack `message` events with the same `TriageService` and replies
+in the thread. It only mounts when both `SLACK_SIGNING_SECRET` and `SLACK_BOT_TOKEN` are set
+(empty in `.env.example`); with either unset the route does not exist (404) and the API logs one
+`slack_disabled` line at startup. No `X-API-Key` is checked on this route — the Slack request
+signature is the auth.
+
+```bash
+# .env
+SLACK_SIGNING_SECRET=...             # from the Slack app's "Basic Information" page
+SLACK_BOT_TOKEN=xoxb-...             # from "OAuth & Permissions" after installing the app
+SLACK_CHANNEL_AREAS=C0123=Comercial MX,C0456=Soporte   # optional; unknown channels get source_area=null
+```
+
+Bot token scopes: `channels:history` (read messages) and `chat:write` (reply). Events URL in the
+Slack app's "Event Subscriptions" page: `https://<your-host>/slack/events`, subscribed to the
+`message.channels` bot event.
+
+The event id becomes the request id (`slack-<event_id>`), so Slack's own retries of the same
+event are idempotent no-ops (no second reply); bot messages, edits (any `subtype`) and thread
+replies are ignored. Classification runs in a FastAPI `BackgroundTasks` job in the same process
+(a thread pool, `anyio.to_thread`) — a restart loses whatever was in flight; `DECISIONES.md` §5
+records the durable-queue design for production.
+
+## 11. Pending items
 
 | Item | Why | How |
 |---|---|---|
@@ -215,10 +240,9 @@ drift from the contract silently; CI fails if the generated files are stale.
 | `POST /solicitudes/` (trailing slash) redirects with 307 | Starlette default | Use the exact path |
 | Live acceptance of the strict tool schema and the Agent SDK path | No real call in development (D29) | The first real call (section 3) |
 | `AI_LOG.md` | Written by the candidate | — |
-| Extras: Slack Events endpoint | Parts 1–4, CI, model comparison and duplicate detection first | Spec 06d |
 | Measured model comparison (`make compare-models`) | Needs paid runs (D29) | Run it with Pitz's key; the table and the command exist |
 
-## 11. Documentation map
+## 12. Documentation map
 
 `DECISIONES.md` (design decisions) · `docs/MASTER.md` (requirements, decisions, gaps) ·
 `docs/superpowers/specs/` and `plans/` · `docs/superpowers/reviews/` (every review gate) ·
