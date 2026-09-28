@@ -11,6 +11,7 @@ the message text, token or reply text.
 import hashlib
 import hmac
 import logging
+import re
 from collections.abc import Mapping
 
 import httpx2
@@ -21,6 +22,9 @@ logger = logging.getLogger("pitz_pulse.slack")
 
 _MAX_SKEW_S = 300
 _SLACK_API_BASE_URL = "https://slack.com/api"
+# Bounds the timestamp to a plain, short non-negative integer: no sign, no huge digit runs that
+# would overflow `now - ts`'s float conversion (12 digits reaches year ~33658, ample headroom).
+_TIMESTAMP_PATTERN = re.compile(r"^\d{1,12}$")
 
 
 class InvalidSignature(Exception):
@@ -38,15 +42,16 @@ class SlackVerifier:
         signature = headers.get("X-Slack-Signature")
         if timestamp is None or signature is None:
             raise InvalidSignature("missing timestamp or signature header")
-        try:
-            ts = int(timestamp)
-        except ValueError:
-            raise InvalidSignature("timestamp is not an integer") from None
+        if not _TIMESTAMP_PATTERN.fullmatch(timestamp):
+            raise InvalidSignature("timestamp is not a plain integer of a sane length")
+        if not signature.isascii():
+            raise InvalidSignature("signature is not ASCII")
+        ts = int(timestamp)
         if abs(now - ts) > _MAX_SKEW_S:
             raise InvalidSignature("timestamp outside the allowed window")
         base = b"v0:" + str(ts).encode() + b":" + raw_body
         expected = "v0=" + hmac.new(self._secret, base, hashlib.sha256).hexdigest()
-        if not hmac.compare_digest(expected, signature):
+        if not hmac.compare_digest(expected.encode(), signature.encode()):
             raise InvalidSignature("signature mismatch")
 
 

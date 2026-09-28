@@ -78,3 +78,31 @@ def test_non_integer_timestamp_is_invalid():
     headers = {"X-Slack-Request-Timestamp": "soon", "X-Slack-Signature": "v0=" + "0" * 64}
     with pytest.raises(InvalidSignature):
         SlackVerifier(SECRET).verify(headers, BODY, 1_700_000_000)
+
+
+def test_absurdly_long_timestamp_is_invalid_not_a_crash():
+    # 400 digits: `now - ts` would raise OverflowError converting this int to float if parsed
+    # with plain int(), a 500 instead of the 401 an absurd timestamp should get. `now` is a real
+    # float here (as `time.time()` always is in production), not an int, so the overflow triggers.
+    headers = {
+        "X-Slack-Request-Timestamp": "9" * 400,
+        "X-Slack-Signature": "v0=" + "0" * 64,
+    }
+    with pytest.raises(InvalidSignature):
+        SlackVerifier(SECRET).verify(headers, BODY, 1_700_000_000.0)
+
+
+def test_negative_timestamp_is_invalid():
+    headers = {"X-Slack-Request-Timestamp": "-1700000000", "X-Slack-Signature": "v0=" + "0" * 64}
+    with pytest.raises(InvalidSignature):
+        SlackVerifier(SECRET).verify(headers, BODY, 1_700_000_000)
+
+
+def test_non_ascii_signature_is_invalid_not_a_crash():
+    now = 1_700_000_000
+    headers = {
+        "X-Slack-Request-Timestamp": str(now),
+        "X-Slack-Signature": "v0=" + "\xf1" * 64,  # Latin-1 byte range, not ASCII
+    }
+    with pytest.raises(InvalidSignature):
+        SlackVerifier(SECRET).verify(headers, BODY, now)
