@@ -15,8 +15,8 @@ def test_normalize_lowercases_strips_accents_punctuation_and_collapses_spaces():
     assert normalize("¡Cómo, ES esto!!  Múltiples   espacios.") == "como es esto multiples espacios"
 
 
-def test_normalize_truncates_to_1000_chars():
-    assert normalize("a" * 2000) == "a" * 1000
+def test_normalize_truncates_to_300_chars():
+    assert normalize("a" * 2000) == "a" * 300
 
 
 def test_identical_message_is_flagged():
@@ -87,3 +87,31 @@ def test_quick_ratio_prefilter_does_not_change_results():
         return best_id
 
     assert detector().find(LONG_A, candidates) == naive_find(LONG_A, candidates, 0.85)
+
+
+def test_full_window_of_long_same_language_texts_stays_under_budget():
+    """200 candidates, each ~1000 raw chars of similar Spanish vocabulary (the worst case for the
+    real_quick_ratio length-based prefilter, since every candidate is close in length): the
+    Jaccard word-set prefilter and the 300-char truncation must keep `find` fast."""
+    import random
+    import time as _time
+
+    vocabulary = (
+        "reporte factura cliente sistema acceso cuenta urgente soporte problema equipo "
+        "solicitud proceso datos usuario correo registro pago servicio pedido incidente "
+        "formulario contrato ticket revision entrega envio devolucion saldo inventario "
+        "almacen producto vendedor comprador orden confirmacion notificacion alerta"
+    ).split()
+
+    def make_text(seed: int) -> str:
+        words = random.Random(seed).choices(vocabulary, k=160)  # ~1000 chars
+        return " ".join(words)
+
+    candidates = [(f"r{i}", make_text(i)) for i in range(200)]
+    message = make_text(999)
+
+    start = _time.perf_counter()
+    detector().find(message, candidates)
+    elapsed = _time.perf_counter() - start
+
+    assert elapsed < 0.5

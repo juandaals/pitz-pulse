@@ -11,17 +11,24 @@ from difflib import SequenceMatcher
 
 _PUNCTUATION = re.compile(r"[^\w\s]", re.UNICODE)
 _WHITESPACE = re.compile(r"\s+")
-_TRUNCATE_CHARS = 1000
+_TRUNCATE_CHARS = 300
+_JACCARD_MIN = 0.5  # cheap word-set prefilter, ahead of the character-level quick_ratio
 
 
 def normalize(text: str) -> str:
-    """Lowercase, strip accents/punctuation, collapse whitespace, truncate to 1000 chars."""
+    """Lowercase, strip accents/punctuation, collapse whitespace, truncate to 300 chars."""
     text = text.lower()
     decomposed = unicodedata.normalize("NFKD", text)
     without_accents = "".join(ch for ch in decomposed if not unicodedata.combining(ch))
     without_punctuation = _PUNCTUATION.sub("", without_accents)
     collapsed = _WHITESPACE.sub(" ", without_punctuation).strip()
     return collapsed[:_TRUNCATE_CHARS]
+
+
+def _jaccard(a: set[str], b: set[str]) -> float:
+    if not a or not b:
+        return 0.0
+    return len(a & b) / len(a | b)
 
 
 class DuplicateDetector:
@@ -42,11 +49,15 @@ class DuplicateDetector:
         normalized = normalize(message)
         if len(normalized) < self.min_len:
             return None
+        message_words = set(normalized.split())
         best_id, best_ratio = None, 0.0
         for candidate_id, candidate_text in candidates[: self.window]:
             candidate_normalized = normalize(candidate_text)
             matcher = SequenceMatcher(None, normalized, candidate_normalized, autojunk=False)
             if matcher.real_quick_ratio() < self.threshold:
+                continue
+            candidate_words = set(candidate_normalized.split())
+            if _jaccard(message_words, candidate_words) < _JACCARD_MIN:
                 continue
             if matcher.quick_ratio() < self.threshold:
                 continue
