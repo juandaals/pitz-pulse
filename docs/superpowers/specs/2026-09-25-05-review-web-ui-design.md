@@ -3,7 +3,7 @@
 - **Covers:** X5; makes R1.10 (review queue) and R2.3 (corrections) usable by non-developers
 - **Depends on:** Specs 01–04 done and verified; `make web-types` (04a); CI freshness check is
   added by 06a, and a local `make web-types` + `git diff --exit-code` covers it until then
-- **Status:** draft (rev 2 — review findings applied)
+- **Status:** implemented on feat/spec-05-web
 - **Decisions used:** D12, D13, D22 (see `docs/MASTER.md`)
 
 ## 1. Goal

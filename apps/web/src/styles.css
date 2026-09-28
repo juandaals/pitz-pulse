@@ -98,6 +98,23 @@ td {
   padding-left: 1.2rem;
 }
 
+.field-errors.inline {
+  margin: 0.25rem 0 0;
+  font-size: 0.85rem;
+}
+
+.notice {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  border: 1px solid #fcd34d;
+  background: #fffbeb;
+  padding: 0.75rem;
+  border-radius: 0.4rem;
+  margin-bottom: 1rem;
+}
+
 .error-box {
   border: 1px solid #fca5a5;
   background: #fef2f2;

@@ -93,6 +93,7 @@ describe("RequestDetail", () => {
         requestId="REQ-1"
         onBack={vi.fn()}
         onSaved={vi.fn()}
+        onConflict={vi.fn()}
         onUnauthorized={vi.fn()}
       />,
     );
@@ -101,6 +102,68 @@ describe("RequestDetail", () => {
     const table = screen.getByRole("table");
     expect(within(table).getByText("resumen actual")).toBeInTheDocument();
     expect(within(table).getByText("resumen original")).toBeInTheDocument();
+    expect(screen.getByText(/categoria: consulta → bug/)).toBeInTheDocument();
+  });
+
+  it("lists the changed fields for a correction without a reason, instead of confirmed", async () => {
+    const detail: ItemDetail = {
+      ...correctedDetail,
+      corrections: [
+        {
+          previous_values: { categoria: "consulta" },
+          new_values: { categoria: "bug" },
+          author: "ana",
+          reason: null,
+          created_at: "2026-09-27T11:00:00Z",
+        },
+      ],
+    };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(200, detail)));
+
+    render(
+      <RequestDetail
+        apiKey="key"
+        author="ana"
+        requestId="REQ-1"
+        onBack={vi.fn()}
+        onSaved={vi.fn()}
+        onConflict={vi.fn()}
+        onUnauthorized={vi.fn()}
+      />,
+    );
+
+    await screen.findByText(/categoria: consulta → bug/);
+    expect(screen.queryByText(/confirmed/)).not.toBeInTheDocument();
+  });
+
+  it("labels a correction with no changed fields as confirmed", async () => {
+    const detail: ItemDetail = {
+      ...correctedDetail,
+      corrections: [
+        {
+          previous_values: {},
+          new_values: {},
+          author: "ana",
+          reason: null,
+          created_at: "2026-09-27T11:00:00Z",
+        },
+      ],
+    };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(200, detail)));
+
+    render(
+      <RequestDetail
+        apiKey="key"
+        author="ana"
+        requestId="REQ-1"
+        onBack={vi.fn()}
+        onSaved={vi.fn()}
+        onConflict={vi.fn()}
+        onUnauthorized={vi.fn()}
+      />,
+    );
+
+    await screen.findByText(/confirmed/);
   });
 
   it("shows a read-only view with the error for a failed request, offering no correction form", async () => {
@@ -113,6 +176,7 @@ describe("RequestDetail", () => {
         requestId="REQ-2"
         onBack={vi.fn()}
         onSaved={vi.fn()}
+        onConflict={vi.fn()}
         onUnauthorized={vi.fn()}
       />,
     );
@@ -134,6 +198,7 @@ describe("RequestDetail", () => {
         requestId="REQ-1"
         onBack={vi.fn()}
         onSaved={vi.fn()}
+        onConflict={vi.fn()}
         onUnauthorized={onUnauthorized}
       />,
     );

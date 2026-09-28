@@ -1,12 +1,14 @@
 /**
  * One request: message, current vs original classification, confianza and correction history
- * (Spec 05 §3, §5, §6). Only a `classified` row offers `CorrectionForm`; `pending`/`failed` rows
- * are read-only and show their `error` (Spec 05 §7 — a 409 from PATCH only happens for a row that
- * left `classified` after the list was fetched, so the form is never offered in that case here).
+ * (Spec 05 §3, §5, §6). Only a `classified` row (as of this fetch) offers `CorrectionForm`;
+ * `pending`/`failed` rows are read-only and show their `error`. A 409 from the PATCH can still
+ * happen here even so: the row can leave `classified` between this fetch and the submit (e.g. a
+ * retried POST reclassifying it concurrently, Spec 05 §7) — `CorrectionForm` reports that via
+ * `onConflict` instead of showing it inline, and the caller returns to the list (Spec 05 §5/§6).
  */
 import { useCallback, useEffect, useState } from "react";
 import { ApiError, getRequest } from "../api/client";
-import type { ItemDetail } from "../api/client";
+import type { CorrectionOut, ItemDetail } from "../api/client";
 import { CorrectionForm } from "./CorrectionForm";
 
 export interface RequestDetailProps {
@@ -15,6 +17,7 @@ export interface RequestDetailProps {
   requestId: string;
   onBack: () => void;
   onSaved: () => void;
+  onConflict: (message: string) => void;
   onUnauthorized: () => void;
 }
 
@@ -33,12 +36,28 @@ function displayValue(value: unknown): string {
   return String(value);
 }
 
+/** "confirmed" for an empty diff; otherwise the changed fields as `field: previous → new`. */
+function correctionSummary(correction: CorrectionOut): string {
+  const fields = Object.keys(correction.new_values);
+  if (fields.length === 0) {
+    return "confirmed";
+  }
+  const changes = fields
+    .map(
+      (field) =>
+        `${field}: ${displayValue(correction.previous_values[field])} → ${displayValue(correction.new_values[field])}`,
+    )
+    .join(", ");
+  return correction.reason ? `${changes} (${correction.reason})` : changes;
+}
+
 export function RequestDetail({
   apiKey,
   author,
   requestId,
   onBack,
   onSaved,
+  onConflict,
   onUnauthorized,
 }: RequestDetailProps) {
   const [detail, setDetail] = useState<ItemDetail | null>(null);
@@ -128,8 +147,7 @@ export function RequestDetail({
                 <ul className="corrections">
                   {detail.corrections.map((correction, index) => (
                     <li key={index}>
-                      {correction.created_at} — {correction.author}
-                      {correction.reason ? `: ${correction.reason}` : " (confirmed)"}
+                      {correction.created_at} — {correction.author}: {correctionSummary(correction)}
                     </li>
                   ))}
                 </ul>
@@ -149,6 +167,7 @@ export function RequestDetail({
                   pregunta_seguimiento: detail.pregunta_seguimiento,
                 }}
                 onSuccess={onSaved}
+                onConflict={onConflict}
                 onUnauthorized={onUnauthorized}
               />
             </>

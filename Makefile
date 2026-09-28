@@ -56,9 +56,8 @@ smoke:
 	./scripts/smoke.sh
 
 web-types:
-	@db=$$(mktemp) && \
+	@db=$$(mktemp) && out=$$(mktemp) && trap 'rm -f $$db $$out' EXIT && \
 	LLM_PROVIDER=mock API_KEY=web-types DB_PATH=$$db $(UV) python -c \
 		"import json; from pitz_pulse.api import create_app; print(json.dumps(create_app().openapi(), indent=2))" \
-		> apps/web/openapi.json && \
-	rm -f $$db
+		> $$out && mv $$out apps/web/openapi.json
 	npm --prefix apps/web run gen:types

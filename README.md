@@ -197,6 +197,10 @@ contract fields, with a reason. **The API key travels in the browser only for th
 (Spec 05 §7) — a production deployment would use SSO and derive the reviewer identity from the
 session instead of asking for a key.
 
+If port 8080 is already taken on your machine, set `WEB_PORT` before starting the service, e.g.
+`WEB_PORT=8081 docker compose --profile web up --build` (also settable in `.env`), then open
+`http://localhost:8081` instead.
+
 Types are generated from the API's own OpenAPI document (`make web-types`) so the UI can never
 drift from the contract silently; CI fails if the generated files are stale.
 

@@ -1,33 +1,38 @@
 /**
  * The low-confidence review queue (Spec 05 §3, §5). Default filters `status=classified` +
  * `needs_review=true`; the reviewer can additionally narrow by categoria, prioridad and
- * area_sugerida. Pagination offset is owned by `App` so it survives a round trip through
- * `RequestDetail`; after a save the page is refetched at the same offset, clamped to the last
- * page if the reviewed item left the queue (Spec 05 §7).
+ * area_sugerida. Both `filters` and the pagination `offset` are owned by `App` so they survive a
+ * round trip through `RequestDetail` (this component unmounts on that trip); after a save the page
+ * is refetched at the same filters/offset, clamped to the last page if the reviewed item left the
+ * queue (Spec 05 §7). A clamp never renders the stale (pre-clamp) result — it waits for the
+ * refetch at the clamped offset instead of flashing an empty state — and a request whose result
+ * arrives after a newer one has already resolved is ignored.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { areaValues, categoriaValues, prioridadValues } from "../api/schema";
 import { ApiError, listRequests } from "../api/client";
 import type { Area, Categoria, Page, Prioridad } from "../api/client";
 
 const LIMIT = 20;
 
+export interface Filters {
+  categoria: Categoria | "";
+  prioridad: Prioridad | "";
+  area_sugerida: Area | "";
+}
+
+export const EMPTY_FILTERS: Filters = { categoria: "", prioridad: "", area_sugerida: "" };
+
 export interface QueueListProps {
   apiKey: string;
+  filters: Filters;
+  onFiltersChange: (filters: Filters) => void;
   offset: number;
   onOffsetChange: (offset: number) => void;
   refreshToken: number;
   onSelect: (id: string) => void;
   onUnauthorized: () => void;
 }
-
-interface Filters {
-  categoria: Categoria | "";
-  prioridad: Prioridad | "";
-  area_sugerida: Area | "";
-}
-
-const EMPTY_FILTERS: Filters = { categoria: "", prioridad: "", area_sugerida: "" };
 
 /** Same page the reviewed item would now fall on, so a shrunk queue never shows an empty gap. */
 function clampOffset(offset: number, total: number, limit: number): number {
@@ -38,18 +43,22 @@ function clampOffset(offset: number, total: number, limit: number): number {
 
 export function QueueList({
   apiKey,
+  filters,
+  onFiltersChange,
   offset,
   onOffsetChange,
   refreshToken,
   onSelect,
   onUnauthorized,
 }: QueueListProps) {
-  const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
   const [page, setPage] = useState<Page | null>(null);
   const [status, setStatus] = useState<"loading" | "loaded" | "error">("loading");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  // Guards against a slow, now-superseded request overwriting a newer one's result.
+  const latestRequestId = useRef(0);
 
   const load = useCallback(async () => {
+    const requestId = ++latestRequestId.current;
     setStatus("loading");
     try {
       const result = await listRequests(apiKey, {
@@ -61,13 +70,19 @@ export function QueueList({
         limit: LIMIT,
         offset,
       });
-      setPage(result);
-      setStatus("loaded");
+      if (latestRequestId.current !== requestId) return; // a newer request already won
+
       const clamped = clampOffset(offset, result.total, result.limit);
       if (clamped !== offset) {
+        // This result was fetched at a now-stale offset; never render it, just clamp and wait
+        // for the refetch that follows from the offset prop changing.
         onOffsetChange(clamped);
+        return;
       }
+      setPage(result);
+      setStatus("loaded");
     } catch (error) {
+      if (latestRequestId.current !== requestId) return;
       if (error instanceof ApiError && error.status === 401) {
         onUnauthorized();
         return;
@@ -84,7 +99,7 @@ export function QueueList({
   }, [load]);
 
   function updateFilter(name: keyof Filters, value: string) {
-    setFilters((prev) => ({ ...prev, [name]: value }));
+    onFiltersChange({ ...filters, [name]: value });
     onOffsetChange(0);
   }
 
