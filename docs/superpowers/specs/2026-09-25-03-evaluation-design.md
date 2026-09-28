@@ -91,8 +91,9 @@ Markdown to stdout · exit 0
 make promote RUN=<stem>          refuses unless ALL hold (D23):
    meta.provider == "anthropic_api" · meta.temperature == 0 · meta.set == "case"
    meta.failures empty · ids == the 12 ids of /mensajes.json · results_sha256 matches
-   every item passes full Classification validation · meta.prompt_version == active version
-   meta.prompt_sha256 == sha256 of the current prompts/<version>.md
+   meta.input_sha256 == sha256(/mensajes.json) · every item passes full Classification validation
+   meta.prompt_version == active version · meta.prompt_sha256 == sha256 of the current
+   prompts/<version>.md
    then writes /resultados.meta.json, then /resultados.json (atomic)
 ```
 

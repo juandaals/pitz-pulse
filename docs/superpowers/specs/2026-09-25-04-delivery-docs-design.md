@@ -66,20 +66,23 @@ uvicorn :8000 ──► healthcheck GET /health ──► healthy; /health shows
 | `CLAUDE_CODE_OAUTH_TOKEN` | 01 | — | empty | iff `claude_agent_sdk` |
 | `API_KEY` | 02 | — | `dev-local-key` | yes (API only) |
 | `DB_PATH` | 02 | `data/pitz_pulse.db` | `/data/pitz_pulse.db` | no |
-| `PENDING_STALE_SECONDS` | 02 | 420 | 420 | no (≥ derived minimum, Spec 02 §6) |
+| `PENDING_STALE_SECONDS` | 02 | 540 | 540 | no (≥ derived minimum, Spec 02 §6) |
 | `API_PORT` | 04 | — | 8000 | no |
 | `SLACK_SIGNING_SECRET` / `SLACK_BOT_TOKEN` | 06d | — | empty | no (feature off when empty) |
 | `DUPLICATE_THRESHOLD` | 06c | 0.85 | 0.85 | no |
 | `SLACK_CHANNEL_AREAS` | 06d | — | empty | no |
 | `APP_ROOT` | 01 | package-relative | `/app` | no |
-| `LANGSMITH_TRACING` / `LANGCHAIN_TRACING_V2` | 01 | forced `false` in-process | not passed | — (never enable) |
+| `LANGSMITH_TRACING` / `LANGSMITH_TRACING_V2` / `LANGCHAIN_TRACING` / `LANGCHAIN_TRACING_V2` | 01 | forced `false` in-process | not passed | — (never enable) |
 
 Ranges and forbidden variables are defined in Spec 01 §8.2 / §8.8.
 
 Empty string = unset everywhere except `LLM_TEMPERATURE` (Spec 01 §8.4). Any spec adding a variable
 updates this table in the same change. `test_env_inventory.py` asserts the code default, compose
 default and `.env.example` agree for `PROMPT_VERSION` and that every inventory variable appears in
-`.env.example`.
+`.env.example`. Two entries in `.env.example` deliberately diverge from the compose default shown
+above: `APP_ROOT` is left empty (it is a Docker-only override — the code default already resolves
+correctly for local/non-Docker runs), and `LLM_TEMPERATURE=0` is written out explicitly (documents
+the default of the three-state variable instead of leaving it to inference).
 
 ### 4. Module view
 

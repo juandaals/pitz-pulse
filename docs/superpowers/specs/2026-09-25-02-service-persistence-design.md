@@ -163,11 +163,17 @@ classifier.classify(req) → ClassifyOutcome   (outside any transaction: no DB l
                            (response detail is a constant; logs carry the class name only)
 ```
 
-`PENDING_STALE_SECONDS` default 420; at startup it must be ≥
-`(1 + INVALID_OUTPUT_RETRIES) × deadline_s + 60`, where `deadline_s` is Spec 01's hard per-invoke
-deadline (`LLM_TIMEOUT_SECONDS × (1 + LLM_MAX_RETRIES) + 30`; 150 s with defaults → minimum 360 s),
-else startup error. Because every adapter enforces that deadline, a live worker can never be
-re-claimed; the claim-token guard additionally makes any late worker a no-op.
+`PENDING_STALE_SECONDS` default 540; at startup it must be ≥
+`(1 + INVALID_OUTPUT_RETRIES) × deadline_s + 60`, where `deadline_s` is Spec 01's per-invoke
+deadline budget (`LLM_TIMEOUT_SECONDS × (1 + LLM_MAX_RETRIES) + LLM_MAX_RETRIES × 30 + 10`; 220 s
+with defaults → minimum 500 s), else startup error. That budget is checked between attempts, not
+enforced as a wall-clock kill: an attempt already in flight can overrun it (the httpx read timeout
+resets on every received chunk, so a slow trickling response is not cut at `LLM_TIMEOUT_SECONDS`).
+The stale window therefore does not guarantee that a worker is dead when its row is re-claimed.
+**The G24 claim token is the guarantee against overwrite**: `complete`/`fail` match
+`claim_token`, so a late worker's write is a no-op. The residual cost is that re-claiming a still
+live worker can cause a duplicate paid call; the Spec 02 plan must note this (and may add an
+overrun term to the stale-window minimum).
 
 ## 7. Flow — PATCH correction
 

@@ -102,7 +102,7 @@ pitz-pulse/
 
 | # | Spec | Covers | File | Plan | Status |
 |---|------|--------|------|------|--------|
-| 01 | Classification core | Part 1 | `specs/2026-09-25-01-classification-core-design.md` | pending | draft rev 3 (spec gate reviewed) |
+| 01 | Classification core | Part 1 | `specs/2026-09-25-01-classification-core-design.md` | pending | implemented and gate-reviewed on `feat/spec-01-classification-core`; real smoke deferred to the Pitz key (D29) |
 | 02 | Service & persistence | Part 2 | `specs/2026-09-25-02-service-persistence-design.md` | pending | draft rev 2 |
 | 03 | Evaluation, golden sets, iteration | Part 3 | `specs/2026-09-25-03-evaluation-design.md` | pending | draft rev 2 |
 | 04 | 04a delivery · 04b docs | Part 2 (compose) + Part 4 | `specs/2026-09-25-04-delivery-docs-design.md` | pending | draft rev 2 |
@@ -170,7 +170,7 @@ show real output → propose commit(s) → candidate approves.
 | D1 | **LangGraph is the harness**: graph `mask → call_llm → validate → retry`; provider SDKs are transports only | Candidate decision: provider portability and a graph that can grow (e.g. multi-turn clarification). The feedback-retry loop is a real cycle. Agent SDK as harness rejected: its loop/tools/`.claude` loading add non-deterministic, filesystem-capable behavior | approved |
 | D2 | Default model `claude-haiku-4-5`, `LLM_TEMPERATURE` via env (default 0, empty = omit); compare against `claude-sonnet-4-6` and `claude-sonnet-5` | Case requires temperature 0; Sonnet 5 / Opus 5+ reject temperature (400) → startup error if configured, never silently dropped | approved |
 | D3 | Forced tool call + `strict` where supported; tool schema stripped of keywords strict rejects; Pydantic re-validates | Schema-valid arguments; constraints JSON Schema/strict can't express stay in Pydantic (G23) | approved |
-| D4 | Transport retries inside the SDK (via adapter); graph retries only invalid output, with errors fed back | At temperature 0 an identical retry repeats the same invalid output | approved |
+| D4 | Transport retries inside the SDK (via adapter); graph retries only invalid output, with errors fed back (amended by D4a) | At temperature 0 an identical retry repeats the same invalid output | approved |
 | D5 | Sync code: FastAPI `def` routes, per-request SQLite connection, `ThreadPoolExecutor` batch. Exception: Slack route is `async` (raw body) | One code path, bounded concurrency, no event-loop blocking | approved |
 | D6 | stdlib `sqlite3` + plain SQL migrations with an atomic runner | No ORM/Alembic for 2 tables | approved |
 | D7 | Idempotency: `BEGIN IMMEDIATE` reservation row + message hash + claim token | Race-safe, records failures, late workers become no-ops (G24) | approved |
@@ -190,9 +190,13 @@ show real output → propose commit(s) → candidate approves.
 | D21 | Config split: `LLMSettings` (batch/eval/API) and `ApiSettings` (API only: `API_KEY`, `DB_PATH`, `PENDING_STALE_SECONDS`) | CLIs must not require the HTTP API key | approved |
 | D22 | Web served by nginx proxying `/api` → api (no CORS); compose profile `web` | One origin; web failure never blocks the core stack | approved |
 | D23 | Official `resultados.json` only from `anthropic_api` at temperature 0; promote also enforces set = case, the 12 ids, no failures, hashes and full contract | Case requires temperature 0; the Agent SDK cannot set it. Agent SDK = development provider | approved |
-| D24 | Agent SDK adapter uses `claude-agent-sdk` directly (no LangChain wrapper), plain-JSON reply validated by the graph, full isolation options, explicit subprocess env, hard deadline, concurrency semaphore | The SDK has no forced tool choice and `output_format` hides a retry loop (conflicts with D4); wrappers lack isolation options | approved |
+| D24 | Agent SDK adapter uses `claude-agent-sdk` directly (no LangChain wrapper), plain-JSON reply validated by the graph, full isolation options, explicit subprocess env, deadline budget (checked between attempts; see D28), concurrency semaphore | The SDK has no forced tool choice and `output_format` hides a retry loop (conflicts with D4); wrappers lack isolation options | approved |
 | D25 | Provider unset + exactly one credential → that provider (logged); mock responses carry `X-Pitz-Provider: mock` | Evaluators who only set their key must not silently get mock output | approved |
 | D26 | Run stems include the golden set; no overwrite without `FORCE`; meta carries prompt/input/results hashes; `eval/runs/` committed after every real run | Evidence for the README iteration story cannot be silently destroyed or mismatched | approved |
+| D4a | Amendment to D4: the Anthropic adapter owns all of its transport retries itself (`ChatAnthropic(max_retries=0)`), capping every `retry-after` wait at 30 s; the per-invoke deadline budget (checked between attempts, not a wall-clock kill — D28) is `LLM_TIMEOUT_SECONDS × (1 + LLM_MAX_RETRIES) + LLM_MAX_RETRIES × 30 + 10` (220 s with defaults) | The underlying SDK would otherwise honor an unbounded server `retry-after`, which could blow any deadline; only an adapter-owned retry loop can cap it (G33) | approved |
+| D27 | Execution rulings confirmed while implementing Spec 01 (this phase): tracing is disabled with the four LangSmith/LangChain env vars plus `langsmith.utils.get_env_var.cache_clear()` and `tracing_context(enabled=False)` around every graph run — `run_trees.configure(enabled=False)` is deliberately not used because it leaks process-global state; masking guards are bounded to plausible amounts/dates and the separated-RFC and bare-phone rules are keyword/case gated as documented in Spec 01 §8.6; `ClaudeAgentSdkAdapter` rejects at construction any config whose deadline cannot fit one attempt plus SDK cleanup; batch uses a sliding concurrency window that stops submitting after the first `llm_rejected` and records never-submitted items as `cancelled` (stop rule narrowed by D28) | Verified while implementing and testing Spec 01; specs and this document are updated to match rather than left describing intent that diverged from the shipped behavior | approved |
+| D28 | Spec 01 implementation-gate rulings: (a) the per-invoke deadline is a best-effort budget checked between attempts; an in-flight Anthropic attempt is bounded only by the httpx per-phase timeouts and Spec 02's claim token is the safety net; (b) the batch stops only on credential rejections (401/403, `authentication_failed`, `billing_error`, CLI not found) — other `llm_rejected` items are recorded and the batch continues; (c) run meta records `tool_schema_sha256` (Spec 03 promote check deferred to Spec 03); (d) masking strips Unicode `Cf` before NFKC and keeps prompt-only over-masking (`número`, keyword + year list, separated alphanumeric codes as `[CNPJ]`, area-coded `NNNN-NNNN` without a keyword); the exact CPF shape wins over the IPv4 guard; (e) a bare `Exception` from the Agent SDK query maps to `unavailable` / `SDKControlError`; (f) `tool_schema_sha256` is null when the provider does not send the tool | (a) a wall-clock kill of an in-flight httpx call needs threads the plan removed on purpose — cost: one attempt can overrun by up to one per-phase timeout; (b) one oversized edge message must not kill a 12+N run — cost: a systemic 400 runs the whole set (4xx are not billed) and the all-rejected summary names the error types; (c) tool descriptions carry rubric text outside `prompt_sha256`; (d) D14 | approved |
+| D29 | The assistant makes no real model call and uses no personal key. `.env` defaults to `LLM_PROVIDER=anthropic_api` with an empty `ANTHROPIC_API_KEY` (fails fast with `ConfigError`, never silent mock); `LLM_PROVIDER=mock` is the development/test provider (same graph, contract validation and error types; no external calls). README explains how to activate the real integration with Pitz's key; live acceptance of the strict tool schema (G23, Spec 01 §12) is verified by whoever runs it with that key | Candidate decision 2026-09-27: no spend on personal credentials | approved |
 
 ## 8. Gaps, edge cases and contradictions register
 
@@ -230,14 +234,14 @@ show real output → propose commit(s) → candidate approves.
 | G30 | "Empty = omit" temperature contradicted "empty = unset" and compose `:-` | contradiction | Three-state `LLM_TEMPERATURE` (unset → 0, `none` → omit); compose `${LLM_TEMPERATURE-0}` | 01, 04a |
 | G31 | LangSmith tracing (transitive dependency) could upload raw state | risk | Mask before the graph; tracing forced off | 01 |
 | G32 | Agent SDK CLI inherits env and persists transcripts | risk | Explicit env, persistence off, isolation options tested | 01 |
-| G33 | No hard per-invoke deadline (uncapped retry-after, CLI defaults) | edge case | Deadline in every adapter; Spec 02 stale window derived from it | 01, 02 |
+| G33 | No hard per-invoke deadline (uncapped retry-after, CLI defaults) | edge case | Deadline budget in every adapter, checked between attempts (in-flight attempt bounded by per-phase timeouts, D28); Spec 02 stale window + claim token cover overruns | 01, 02 |
 | G34 | Masking missed common real formats and over-masked dates/IPs/amounts | edge case | Widened patterns + guards + fixtures (Spec 01 §8.6) | 01 |
 
 ## 9. Open items (blocking)
 
 1. ~~`etiquetas_esperadas.json`~~ approved 2026-09-25 (AI-drafted, candidate-approved; disclosed in README/AI_LOG).
 2. Edge-set labels drafted in Spec 03 and approved by the candidate before the first edge run.
-3. `ANTHROPIC_API_KEY` in `.env` (official runs, D23). `CLAUDE_CODE_OAUTH_TOKEN` optional for development runs.
+3. No real key in this repo's development (D29). Real runs (smoke, official `resultados.json`, D23) need Pitz's `ANTHROPIC_API_KEY`; how `resultados.json` is produced without a real run is to be decided before Spec 03.
 
 ## 10. Delivery checklist (maps to the case deliverables)
 
