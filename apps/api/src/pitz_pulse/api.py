@@ -1,6 +1,7 @@
 """HTTP API (Spec 02 §4). `uvicorn --factory pitz_pulse.api:create_app` calls create_app()."""
 
 import hmac
+import logging
 import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -14,13 +15,17 @@ from pitz_pulse import db, http_errors
 from pitz_pulse.api_models import ErrorBody, Item, ItemDetail, ListQuery, Page, PatchBody
 from pitz_pulse.classifier import build_classifier
 from pitz_pulse.config import disable_tracing
-from pitz_pulse.logs import configure_logging
+from pitz_pulse.logs import configure_logging, log_event
 from pitz_pulse.models_catalog import MOCK
 from pitz_pulse.providers.base import ProviderAdapter
 from pitz_pulse.repository import StoredRequest
 from pitz_pulse.schema import ID_PATTERN, RequestInput
 from pitz_pulse.service import TriageService
 from pitz_pulse.settings_api import ApiSettings, parse_api_settings
+from pitz_pulse.slack import SlackNotifier, SlackVerifier
+from pitz_pulse.slack_routes import build_slack_router
+
+_slack_logger = logging.getLogger("pitz_pulse.slack")
 
 MOCK_HEADER = "X-Pitz-Provider"
 RequestId = Annotated[str, Path(pattern=ID_PATTERN)]
@@ -33,7 +38,9 @@ def _errors(*statuses: int) -> dict[int | str, dict[str, Any]]:
 
 
 def create_app(
-    settings: ApiSettings | None = None, adapter: ProviderAdapter | None = None
+    settings: ApiSettings | None = None,
+    adapter: ProviderAdapter | None = None,
+    slack_notifier: SlackNotifier | None = None,
 ) -> FastAPI:
     if settings is None:
         configure_logging("INFO")  # before parsing: the auto-selection log line must not be lost
@@ -92,7 +99,24 @@ def create_app(
         }
 
     app.include_router(_router(service, settings.api_key))
+    _mount_slack(app, service, settings, slack_notifier)
     return app
+
+
+def _mount_slack(
+    app: FastAPI,
+    service: TriageService,
+    settings: ApiSettings,
+    notifier: SlackNotifier | None,
+) -> None:
+    if not (settings.slack_signing_secret and settings.slack_bot_token):
+        log_event(_slack_logger, "slack_disabled")
+        return
+    verifier = SlackVerifier(settings.slack_signing_secret)
+    notifier = notifier or SlackNotifier(settings.slack_bot_token)
+    app.include_router(
+        build_slack_router(service, notifier, verifier, settings.slack_channel_areas)
+    )
 
 
 def _mark_stored_mock_rows(response: Response, rows: list[StoredRequest]) -> None:

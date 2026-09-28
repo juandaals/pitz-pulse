@@ -21,6 +21,9 @@ class ApiSettings:
     db_path: Path
     pending_stale_s: int
     duplicate_threshold: float
+    slack_signing_secret: str | None = field(default=None, repr=False)
+    slack_bot_token: str | None = field(default=None, repr=False)
+    slack_channel_areas: dict[str, str] = field(default_factory=dict)
 
 
 def stale_floor_s(llm: LLMSettings, queue_wait_s: float = QUEUE_WAIT_S) -> int:
@@ -30,6 +33,26 @@ def stale_floor_s(llm: LLMSettings, queue_wait_s: float = QUEUE_WAIT_S) -> int:
 
 def _text(env: Mapping[str, str], name: str) -> str:
     return (env.get(name) or "").strip()
+
+
+def _channel_areas(env: Mapping[str, str]) -> dict[str, str]:
+    """`C123=Comercial MX,C456=Otro area` -> {"C123": "Comercial MX", "C456": "Otro area"}."""
+    raw = _text(env, "SLACK_CHANNEL_AREAS")
+    if not raw:
+        return {}
+    areas: dict[str, str] = {}
+    for entry in raw.split(","):
+        entry = entry.strip()
+        if not entry:
+            continue
+        channel, sep, area = entry.partition("=")
+        channel, area = channel.strip(), area.strip()
+        if not sep or not channel or not area:
+            raise ConfigError(
+                "SLACK_CHANNEL_AREAS must look like 'C123=Comercial MX,C456=Otro area'"
+            )
+        areas[channel] = area
+    return areas
 
 
 def _duplicate_threshold(env: Mapping[str, str]) -> float:
@@ -61,9 +84,14 @@ def parse_api_settings(env: Mapping[str, str]) -> ApiSettings:
         db_path = llm.app_root / db_path  # never the current working directory
     floor = stale_floor_s(llm)
     duplicate_threshold = _duplicate_threshold(env)
+    slack = {
+        "slack_signing_secret": _text(env, "SLACK_SIGNING_SECRET") or None,
+        "slack_bot_token": _text(env, "SLACK_BOT_TOKEN") or None,
+        "slack_channel_areas": _channel_areas(env),
+    }
     raw_stale = _text(env, "PENDING_STALE_SECONDS")
     if not raw_stale:
-        return ApiSettings(llm, api_key, db_path, floor, duplicate_threshold)
+        return ApiSettings(llm, api_key, db_path, floor, duplicate_threshold, **slack)
     try:
         stale = int(raw_stale)
     except ValueError:
@@ -77,4 +105,4 @@ def parse_api_settings(env: Mapping[str, str]) -> ApiSettings:
         raise ConfigError(
             f"PENDING_STALE_SECONDS={stale} is above the maximum {MAX_PENDING_STALE_S} (7 days)"
         )
-    return ApiSettings(llm, api_key, db_path, stale, duplicate_threshold)
+    return ApiSettings(llm, api_key, db_path, stale, duplicate_threshold, **slack)

@@ -22,6 +22,10 @@ services:
       DB_PATH: /data/pitz_pulse.db
       PENDING_STALE_SECONDS: ${PENDING_STALE_SECONDS:-}
       APP_ROOT: /app
+      # Slack Events endpoint (Spec 06d, X1): mounted only when both secrets are set.
+      SLACK_SIGNING_SECRET: ${SLACK_SIGNING_SECRET:-}
+      SLACK_BOT_TOKEN: ${SLACK_BOT_TOKEN:-}
+      SLACK_CHANNEL_AREAS: ${SLACK_CHANNEL_AREAS:-}
     ports:
       - "${API_PORT:-8000}:8000"
     volumes:

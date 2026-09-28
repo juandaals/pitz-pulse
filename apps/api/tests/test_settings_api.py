@@ -91,3 +91,32 @@ def test_duplicate_threshold_must_be_a_number():
 def test_duplicate_threshold_accepts_the_boundary_values(value):
     settings = parse_api_settings({**BASE, "DUPLICATE_THRESHOLD": value})
     assert settings.duplicate_threshold == float(value)
+
+
+def test_slack_settings_default_to_disabled():
+    settings = parse_api_settings(BASE)
+    assert settings.slack_signing_secret is None
+    assert settings.slack_bot_token is None
+    assert settings.slack_channel_areas == {}
+
+
+def test_slack_secrets_are_read_and_hidden_from_repr():
+    settings = parse_api_settings(
+        {**BASE, "SLACK_SIGNING_SECRET": "sentinel-signing", "SLACK_BOT_TOKEN": "xoxb-sentinel"}
+    )
+    assert settings.slack_signing_secret == "sentinel-signing"
+    assert settings.slack_bot_token == "xoxb-sentinel"
+    assert "sentinel-signing" not in repr(settings)
+    assert "xoxb-sentinel" not in repr(settings)
+
+
+def test_slack_channel_areas_parses_the_mapping():
+    settings = parse_api_settings(
+        {**BASE, "SLACK_CHANNEL_AREAS": "C123=Comercial MX, C456=Soporte"}
+    )
+    assert settings.slack_channel_areas == {"C123": "Comercial MX", "C456": "Soporte"}
+
+
+def test_slack_channel_areas_rejects_a_malformed_entry():
+    with pytest.raises(ConfigError, match="SLACK_CHANNEL_AREAS"):
+        parse_api_settings({**BASE, "SLACK_CHANNEL_AREAS": "C123"})
