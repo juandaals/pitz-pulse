@@ -53,12 +53,12 @@ Tests: compare-table math from synthetic metas and reports.
 similarity ("third case like this this month") needs embeddings — listed as the upgrade path.
 
 ```
-TriageService.create ─► classify ok ─► inside complete()'s transaction:
+TriageService.create ─► classify ok ─► before complete() (read-only, no write lock held):
    candidates = last N=200 classified rows, same idioma, id != current
    normalized = lowercase, strip accents/punctuation, collapse spaces, truncate 1000 chars
    len(normalized) < 30 ─► skip (short-message guard)
    SequenceMatcher(autojunk=False): real_quick_ratio ─► quick_ratio ─► ratio ≥ DUPLICATE_THRESHOLD
-   ─► possible_duplicate_of = best id (else null)
+   ─► possible_duplicate_of = best id (else null), written by complete() in its transaction
 ```
 - `migrations/002_possible_duplicate.sql` adds the column. stdlib only.
 - `possible_duplicate_of` exists on the API Item only — never on `Classification` or run files;
@@ -93,7 +93,7 @@ process only: type == event_callback, event.type == message, no subtype, no bot_
               thread_ts absent or == ts                         (else 200, ignored)
    ▼
 BackgroundTasks.add(process, event) ─► 200 immediately
-   ▼ background (own DB connection + TriageService)
+   ▼ background (the app's single TriageService: shares its model-slot semaphore, Spec 02 §2)
 create(id = "slack-" + event_id, message = text, source_area = SLACK_CHANNEL_AREAS.get(channel))
    ▼ created=True (this call classified)
 chat.postMessage(channel, thread_ts = ts, text = reply)
@@ -107,7 +107,9 @@ Reply template: categoria · prioridad · area_sugerida · resumen; `pregunta_se
 | created=False (Slack retry, already classified) | nothing (no second reply) |
 | InProgress | ignore (the first worker replies) |
 | ValidationError (empty/too long) | short reply explaining the limit + log |
-| ClassificationError | log + reply "could not classify, a human will review" |
+| ClassificationFailed / Busy / DbBusy / ClassificationCrash | log (event_id, class name) + reply "could not classify, a human will review" |
+| IdConflict (same event id, different text) | error log with event_id, no reply |
+| any other `DomainError` or exception | error log with event_id and class name, never re-raised from the task |
 | postMessage `ok:false` / 429 | error log with event_id |
 
 ```

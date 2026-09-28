@@ -28,8 +28,14 @@ origin, so the API needs no CORS. Compose `web` service lives under profile `web
 (`docker compose --profile web up`), `depends_on: api: condition: service_healthy`; a web build
 failure can never block the core `docker compose up`.
 
-`make web-types`: dumps `create_app(...).openapi()` offline via `uv` (no running server), then runs
+`make web-types`: dumps `create_app().openapi()` offline via `uv` (no running server) with
+`LLM_PROVIDER=mock API_KEY=web-types DB_PATH=<temp file>` set by the target (no secrets, no real
+DB; Spec 02 §9), then runs
 `openapi-typescript`. The generated file is committed.
+
+The UI shows a "mock" badge on any item whose `provider` is `mock` (Spec 02 Item, D25), and maps
+422 `validation_error` `fields` to form errors (cross-field rules arrive with `loc: ["body"]` and
+are shown above the form).
 
 ## 3. Components (`apps/web/src/`)
 

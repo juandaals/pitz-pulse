@@ -56,7 +56,7 @@ iff `requiere_info`.
 | File | Responsibility |
 |---|---|
 | `apps/api/src/pitz_pulse/evaluate.py` | CLI: load + validate, call `scoring`, print Markdown; exit codes |
-| `apps/api/src/pitz_pulse/scoring.py` | Pure functions: `score(labels, results, threshold)`, `compare_runs(a, b)`, `threshold_sweep` |
+| `apps/api/src/pitz_pulse/scoring.py` | Pure functions: `score(labels, results, threshold)`, `compare_runs(a, b)`, `threshold_sweep`; "routed to review" uses Spec 02's `review.needs_review` (strict `<`) |
 | `apps/api/src/pitz_pulse/promote.py` | `promote(stem)`: verify (below), then write `/resultados.meta.json` then `/resultados.json` (atomic, meta first) |
 | `apps/api/eval/runs/` | Run files from Spec 01 batch (`<set>__<prompt>__<provider>__<model>[__<suffix>].json` + `.meta.json`), committed after every real run (D26) |
 | `apps/api/prompts/CHANGELOG.md` | Per version: change, hypothesis, eval before → after, stability note |

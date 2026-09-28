@@ -12,6 +12,8 @@ dependencies = [
     "claude-agent-sdk>=0.2.160,<0.3",
     "langsmith>=0.14.1,<0.15",  # tracing_context: classify never traces (D14)
     "anyio>=4.15,<5",  # runs the Agent SDK's async query from a worker thread
+    "fastapi>=0.141,<0.142",  # HTTP API (Spec 02); starlette stays as locked
+    "uvicorn>=0.54,<0.55",  # ASGI server; `uvicorn --factory pitz_pulse.api:create_app`
 ]
 
 [dependency-groups]

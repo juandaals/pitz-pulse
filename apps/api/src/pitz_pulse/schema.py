@@ -71,16 +71,29 @@ def word_count(text: str) -> int:
     return len(text.split())
 
 
+ID_PATTERN = r"^[A-Za-z0-9_-]{1,64}$"
+
+
+def ensure_utf8(value: str) -> str:
+    """JSON allows lone surrogates; they cannot be hashed, stored or sent, so reject them."""
+    try:
+        value.encode("utf-8")
+    except UnicodeEncodeError:
+        raise ValueError("must be valid UTF-8 text") from None
+    return value
+
+
 class RequestInput(BaseModel):
     model_config = _FORBID_EXTRA
 
-    id: StrictStr = Field(pattern=r"^[A-Za-z0-9_-]{1,64}$")
+    id: StrictStr = Field(pattern=ID_PATTERN)
     message: StrictStr
     source_area: StrictStr | None = None
 
     @field_validator("message")
     @classmethod
     def _message_length(cls, value: str) -> str:
+        ensure_utf8(value)
         size = len(value.strip())
         if not 1 <= size <= MAX_MESSAGE_CHARS or len(value) > MAX_MESSAGE_RAW_CHARS:
             raise ValueError(
@@ -92,8 +105,10 @@ class RequestInput(BaseModel):
     @field_validator("source_area")
     @classmethod
     def _source_area_length(cls, value: str | None) -> str | None:
-        if value is not None and not 1 <= len(value.strip()) <= 100:
-            raise ValueError("must have 1-100 characters after strip")
+        if value is not None:
+            ensure_utf8(value)
+            if not 1 <= len(value.strip()) <= 100:
+                raise ValueError("must have 1-100 characters after strip")
         return value
 
 
@@ -132,7 +147,7 @@ def _check_rules(model: _ModelFields) -> None:
     if model.requiere_info:
         if question is None or not question.strip():
             raise ValueError("pregunta_seguimiento is required when requiere_info is true")
-        if len(question.strip()) > MAX_QUESTION_CHARS:
+        if len(question) > MAX_QUESTION_CHARS:  # raw: stored text must meet the contract
             raise ValueError(
                 f"pregunta_seguimiento must have at most {MAX_QUESTION_CHARS} characters"
             )

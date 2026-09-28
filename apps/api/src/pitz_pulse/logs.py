@@ -16,6 +16,7 @@ THIRD_PARTY_LOGGERS = (
     "langsmith",
     "mcp",
 )
+OWN_EVENT_LOGGERS = ("pitz_pulse.llm", "pitz_pulse.service")
 _HANDLER_NAME = "pitz_pulse_json"
 
 
@@ -40,8 +41,10 @@ def pin_third_party_loggers() -> None:
         logging.getLogger(name).setLevel(logging.WARNING)
     # Its ERROR lines can embed raw CLI output.
     logging.getLogger("claude_agent_sdk").setLevel(logging.CRITICAL)
-    # One llm_call line per attempt is a requirement (R2.6), whatever LOG_LEVEL is.
-    logging.getLogger("pitz_pulse.llm").setLevel(logging.INFO)
+    # One llm_call line per attempt and one outcome line per request are required (R2.6),
+    # whatever LOG_LEVEL is.
+    for name in OWN_EVENT_LOGGERS:
+        logging.getLogger(name).setLevel(logging.INFO)
 
 
 def configure_logging(level: str = "INFO") -> None:
@@ -54,7 +57,8 @@ def configure_logging(level: str = "INFO") -> None:
     root.setLevel(level.upper())
     pin_third_party_loggers()
     if root.isEnabledFor(logging.DEBUG):
-        logging.getLogger("pitz_pulse.llm").setLevel(logging.DEBUG)
+        for name in OWN_EVENT_LOGGERS:
+            logging.getLogger(name).setLevel(logging.DEBUG)
 
 
 def log_event(logger: logging.Logger, event: str, **fields: object) -> None:
