@@ -134,6 +134,22 @@ choose it from real runs. With Pitz's key the protocol is: run v1 twice (noise f
 general rule as v2, run v2 on both sets, keep it only if it beats v1 beyond the noise floor on the
 case set without regressing the edge set, then promote.
 
+**Comparing models (Spec 06 §06b, D29).** `make compare-models MODELS="claude-haiku-4-5
+claude-sonnet-5" LLM_PROVIDER=anthropic_api CONFIRM=1` classifies both golden sets with each model
+(`SUFFIX=cmp`) and prints one cost-vs-quality table per set (`python -m pitz_pulse.model_compare`),
+built only from files already in `eval/runs/`; it never touches `/resultados.json` and none of these
+runs are ever promoted. Before the first classify call, a preflight step
+(`python -m pitz_pulse.preflight`) validates every (provider, model, temperature) combination with
+a dummy credential, so a typo'd model name fails fast (exit 2, naming the bad model) instead of
+after paying for the first, valid one. `LLM_PROVIDER=mock` needs no confirmation, but accepts only
+**a single MODELS entry**: the mock adapter ignores `LLM_MODEL` and always writes `model=mock`, so
+a second model would silently collide with the first one's run files. Any other provider bills **2
+runs per model** (12 + 18 messages, retries can add calls) and refuses to start without `CONFIRM=1`.
+No paid run was made while building this project (D29), so the table has never been filled with
+real numbers — the tooling and this documentation are the deliverable. Routing "simple" categories
+to a cheaper model is only proposed once real numbers from this table beat the noise floor between
+two identical runs (`make compare`); until then it stays a hypothesis, never a recommendation.
+
 ## 6. Stack and why
 
 - **Python 3.12 + FastAPI + stdlib `sqlite3`** — small surface, sync routes, versioned SQL
@@ -174,7 +190,8 @@ that contained an email address:
 | `POST /solicitudes/` (trailing slash) redirects with 307 | Starlette default | Use the exact path |
 | Live acceptance of the strict tool schema and the Agent SDK path | No real call in development (D29) | The first real call (section 3) |
 | `AI_LOG.md` | Written by the candidate | — |
-| Extras (web UI, CI, model comparison, duplicates, Slack) | Parts 1–4 first | Specs 05–06 |
+| Extras: review web UI, duplicate detection, Slack | Parts 1–4, CI and model comparison first | Specs 05, 06c, 06d |
+| Measured model comparison (`make compare-models`) | Needs paid runs (D29) | Run it with Pitz's key; the table and the command exist |
 
 ## 10. Documentation map
 
