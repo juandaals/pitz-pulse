@@ -44,6 +44,7 @@ const savedItem: Item = {
   error: null,
   created_at: "now",
   updated_at: "now",
+  possible_duplicate_of: null,
 };
 
 function renderForm(overrides: Partial<CorrectionFormInitial> = {}) {

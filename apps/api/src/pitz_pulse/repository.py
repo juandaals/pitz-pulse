@@ -30,6 +30,7 @@ class StoredRequest:
     error: str | None
     created_at: str
     updated_at: str
+    possible_duplicate_of: str | None
 
 
 @dataclass(frozen=True)
@@ -65,6 +66,7 @@ def _to_stored(row: sqlite3.Row) -> StoredRequest:
         error=row["error"],
         created_at=row["created_at"],
         updated_at=row["updated_at"],
+        possible_duplicate_of=row["possible_duplicate_of"],
     )
 
 
@@ -125,24 +127,42 @@ class Repository:
         provider: str,
         model: str,
         now: str,
+        possible_duplicate_of: str | None = None,
     ) -> bool:
         values = result.model_dump(mode="json")
         columns = ", ".join(f"{field} = ?" for field in _VALUE_FIELDS)
         cursor = self.conn.execute(
             f"UPDATE requests SET status = 'classified', {columns}, provider = ?, model = ?,"
-            " original_classification = ?, error = NULL, claim_token = NULL, updated_at = ?"
+            " original_classification = ?, error = NULL, claim_token = NULL,"
+            " possible_duplicate_of = ?, updated_at = ?"
             " WHERE id = ? AND status = 'pending' AND claim_token = ?",
             (
                 *(values[field] for field in _VALUE_FIELDS),
                 provider,
                 model,
                 json.dumps(values, ensure_ascii=False),
+                possible_duplicate_of,
                 now,
                 request_id,
                 token,
             ),
         )
         return cursor.rowcount == 1
+
+    def list_recent_classified(
+        self, idioma: str, exclude_id: str, limit: int
+    ) -> list[tuple[str, str]]:
+        """(id, message) pairs for the last `limit` classified rows in `idioma`, most recent first.
+
+        Read-only; callers use a `read_transaction()` (or an already-open one) so this never
+        takes the write lock (Spec 06c: run before `complete()`, which does the actual write).
+        """
+        rows = self.conn.execute(
+            "SELECT id, message FROM requests WHERE status = 'classified' AND idioma = ?"
+            " AND id != ? ORDER BY created_at DESC, id DESC LIMIT ?",
+            (idioma, exclude_id, limit),
+        ).fetchall()
+        return [(row["id"], row["message"]) for row in rows]
 
     def fail(self, request_id: str, token: str, kind: str, now: str) -> bool:
         cursor = self.conn.execute(

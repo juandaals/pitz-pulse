@@ -114,6 +114,11 @@ export function RequestDetail({
           ) : (
             <>
               <p>confianza: {displayValue(detail.confianza)}</p>
+              {detail.possible_duplicate_of && (
+                <p className="possible-duplicate">
+                  possible duplicate of {detail.possible_duplicate_of}
+                </p>
+              )}
 
               <table className="comparison">
                 <thead>

@@ -804,6 +804,17 @@
           "updated_at": {
             "type": "string",
             "title": "Updated At"
+          },
+          "possible_duplicate_of": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Possible Duplicate Of"
           }
         },
         "type": "object",
@@ -827,7 +838,8 @@
           "corrected",
           "error",
           "created_at",
-          "updated_at"
+          "updated_at",
+          "possible_duplicate_of"
         ],
         "title": "Item"
       },
@@ -1005,6 +1017,17 @@
             "type": "string",
             "title": "Updated At"
           },
+          "possible_duplicate_of": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Possible Duplicate Of"
+          },
           "original_classification": {
             "anyOf": [
               {
@@ -1047,6 +1070,7 @@
           "error",
           "created_at",
           "updated_at",
+          "possible_duplicate_of",
           "original_classification",
           "corrections"
         ],

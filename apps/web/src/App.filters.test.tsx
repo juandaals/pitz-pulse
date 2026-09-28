@@ -39,6 +39,7 @@ const queueItem: Item = {
   error: null,
   created_at: "now",
   updated_at: "now",
+  possible_duplicate_of: null,
 };
 
 const detail: ItemDetail = {

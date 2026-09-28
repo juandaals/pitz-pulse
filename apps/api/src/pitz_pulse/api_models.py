@@ -103,6 +103,7 @@ class Item(BaseModel):
     error: str | None
     created_at: str
     updated_at: str
+    possible_duplicate_of: str | None
 
     @classmethod
     def from_stored(cls, row: StoredRequest, needs_review: bool) -> "Item":
@@ -120,6 +121,7 @@ class Item(BaseModel):
             error=row.error,
             created_at=row.created_at,
             updated_at=row.updated_at,
+            possible_duplicate_of=row.possible_duplicate_of,
         )
 
 

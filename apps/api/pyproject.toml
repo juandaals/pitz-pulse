@@ -14,6 +14,7 @@ dependencies = [
     "anyio>=4.15,<5",  # runs the Agent SDK's async query from a worker thread
     "fastapi>=0.141,<0.142",  # HTTP API (Spec 02); starlette stays as locked
     "uvicorn>=0.54,<0.55",  # ASGI server; `uvicorn --factory pitz_pulse.api:create_app`
+    "httpx2==2.13.1",  # already a transitive dep of anthropic; SlackNotifier's transport (Spec 06d)
 ]
 
 [dependency-groups]
@@ -21,7 +22,6 @@ dev = [
     "pytest>=9.1,<10",
     "ruff>=0.16,<0.17",
     "httpx>=0.28.1,<0.29",  # tests build real anthropic errors and responses
-    "httpx2>=2.13.1,<3",  # offline MockTransport for the Anthropic wire test
 ]
 
 [build-system]

@@ -111,7 +111,7 @@ pitz-pulse/
 | 03 | Evaluation, golden sets, iteration | Part 3 | `specs/2026-09-25-03-evaluation-design.md` | `plans/2026-09-27-03-evaluation-plan.md` (v2) | implemented on feat/spec-03-evaluation (rev 5); edge labels approved 2026-09-27 |
 | 04 | 04a delivery · 04b docs | Part 2 (compose) + Part 4 | `specs/2026-09-25-04-delivery-docs-design.md` | `plans/2026-09-27-04-delivery-docs-plan.md` (fast mode) | implemented on feat/spec-04-delivery-docs; final review applied |
 | 05 | Review web UI (extra) | X5 | `specs/2026-09-25-05-review-web-ui-design.md` | `plans/2026-09-27-05-review-web-plan.md` (fast mode) | implemented on feat/spec-05-web |
-| 06 | Extras: CI, compare, duplicates, Slack | X1–X4 | `specs/2026-09-25-06-extras-design.md` | `plans/2026-09-27-06-extras-plan.md` (fast mode) | 06a, 06b implemented (06b: preflight validates every provider/model/temperature before the first classify) |
+| 06 | Extras: CI, compare, duplicates, Slack | X1–X4 | `specs/2026-09-25-06-extras-design.md` | `plans/2026-09-27-06-extras-plan.md` (fast mode) | 06a–06d implemented (06b: preflight validates every provider/model/temperature before the first classify; 06c: near-duplicate resubmission detection, `DUPLICATE_THRESHOLD`; 06d: `/slack/events`, signature-verified, in-process background classification, tests never call the real Slack API) |
 
 ```
 01 core ──► [etiquetas_esperadas.json approved ✔ · edge labels approved · ANTHROPIC_API_KEY in .env]
@@ -258,7 +258,7 @@ show real output → propose commit(s) → candidate approves.
 - [x] `resultados.json` + meta (promoted from a **mock** run, `mock: true`, D31; real regeneration documented)
 - [x] `etiquetas_esperadas.json` (approved) — mock eval result in README; real one pending (G35)
 - [x] `DECISIONES.md` ≤ 2 pages, six topics
-- [ ] `AI_LOG.md` (candidate)
+- [x] `AI_LOG.md` (AI-drafted at the candidate's request; candidate reviews and edits)
 - [x] `.env.example` with no real values
 - [x] `docker compose up` verified from a clean clone (smoke OK)
 - [x] `make test` and `make eval` verified (672 passed; mock eval in README and review reports)

@@ -11,11 +11,12 @@ from typing import Any
 from pitz_pulse import db
 from pitz_pulse.classifier import Classifier
 from pitz_pulse.corrections import apply_correction
+from pitz_pulse.duplicates import DuplicateDetector
 from pitz_pulse.errors import DbBusy, NotFound
 from pitz_pulse.intake import IntakeMixin
 from pitz_pulse.repository import ListFilters, Repository, StoredRequest
 from pitz_pulse.review import needs_review
-from pitz_pulse.settings_api import QUEUE_WAIT_S
+from pitz_pulse.settings_api import DEFAULT_DUPLICATE_THRESHOLD, QUEUE_WAIT_S
 
 
 def utc_now() -> datetime:
@@ -33,6 +34,7 @@ class TriageService(IntakeMixin):
         queue_wait_s: float = QUEUE_WAIT_S,
         clock: Callable[[], datetime] = utc_now,
         complete_backoff_s: tuple[float, ...] = (0.2, 0.4, 0.8),
+        duplicate_threshold: float = DEFAULT_DUPLICATE_THRESHOLD,
     ):
         self.db_path = db_path
         self.classifier = classifier
@@ -41,6 +43,7 @@ class TriageService(IntakeMixin):
         self.queue_wait_s = queue_wait_s
         self.clock = clock
         self.complete_backoff_s = complete_backoff_s
+        self.duplicate_detector = DuplicateDetector(threshold=duplicate_threshold)
         concurrency = classifier.settings.concurrency
         self._slots = threading.BoundedSemaphore(concurrency)
         self._max_waiters = 2 * concurrency

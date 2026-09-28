@@ -16,7 +16,7 @@ THIRD_PARTY_LOGGERS = (
     "langsmith",
     "mcp",
 )
-OWN_EVENT_LOGGERS = ("pitz_pulse.llm", "pitz_pulse.service")
+OWN_EVENT_LOGGERS = ("pitz_pulse.llm", "pitz_pulse.service", "pitz_pulse.slack")
 _HANDLER_NAME = "pitz_pulse_json"
 
 

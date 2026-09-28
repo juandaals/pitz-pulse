@@ -63,11 +63,20 @@ never contain it.
 
 ## 3. Run with a real model (Pitz's key)
 
+Two variables switch the service from mock to the real model:
+
 ```bash
 cp .env.example .env
-# edit .env: ANTHROPIC_API_KEY=<Pitz key>   (LLM_PROVIDER=anthropic_api is already set)
-docker compose up --build        # the API now classifies with claude-haiku-4-5 at temperature 0
+# in .env:
+#   LLM_PROVIDER=anthropic_api        (already set in .env.example)
+#   ANTHROPIC_API_KEY=<Pitz key>
+docker compose up --build            # API classifies with claude-haiku-4-5 at temperature 0
+curl -s localhost:8000/health        # shows "provider":"anthropic_api"
 ```
+
+For the batch and the official `resultados.json` with the same `.env`:
+`make classify SET=case && make eval RUN=case__v1__anthropic_api__claude-haiku-4-5 && make promote RUN=case__v1__anthropic_api__claude-haiku-4-5`
+(section 5 explains each step).
 
 **First real call.** The strict tool schema and the full request shape have only been verified
 offline (no real call was made). The first real request — a single POST, or `make classify
@@ -204,7 +213,39 @@ If port 8080 is already taken on your machine, set `WEB_PORT` before starting th
 Types are generated from the API's own OpenAPI document (`make web-types`) so the UI can never
 drift from the contract silently; CI fails if the generated files are stale.
 
-## 10. Pending items
+## 10. Slack (optional, Spec 06d, extra X1)
+
+`POST /slack/events` classifies Slack `message` events with the same `TriageService` and replies
+in the thread. It only mounts when both `SLACK_SIGNING_SECRET` and `SLACK_BOT_TOKEN` are set
+(empty in `.env.example`); with either unset the route does not exist (404) and the API logs one
+`slack_disabled` line at startup. No `X-API-Key` is checked on this route — the Slack request
+signature is the auth.
+
+```bash
+# .env
+SLACK_SIGNING_SECRET=...             # from the Slack app's "Basic Information" page
+SLACK_BOT_TOKEN=xoxb-...             # from "OAuth & Permissions" after installing the app
+SLACK_CHANNEL_AREAS=C0123=Comercial MX,C0456=Soporte   # optional; unknown channels get source_area=null
+```
+
+Bot token scopes: `channels:history` (read messages) and `chat:write` (reply). Events URL in the
+Slack app's "Event Subscriptions" page: `https://<your-host>/slack/events`, subscribed to the
+`message.channels` bot event.
+
+The event id becomes the request id (`slack-<event_id>`), so Slack's own retries of the same
+event are idempotent no-ops (no second reply); bot messages, edits and attachments (any
+`subtype`, including a shared file's `file_share`) and thread replies are ignored. Classification
+runs in a FastAPI `BackgroundTasks` job in the same process (a thread pool, `anyio.to_thread`) —
+a restart loses whatever was in flight; `DECISIONES.md` §5 records the durable-queue design for
+production.
+
+The route acks Slack with `200` before classification runs, so Slack's own redelivery (it resends
+an event when it never gets a timely ack) only ever fires for an ack failure — a request that
+fails classification in the background stays `failed` and is not retried by Slack. Recovery is
+manual: re-`POST` the same id and message to `/solicitudes` directly, which reclaims the `failed`
+row and reclassifies it.
+
+## 11. Pending items
 
 | Item | Why | How |
 |---|---|---|
@@ -215,10 +256,9 @@ drift from the contract silently; CI fails if the generated files are stale.
 | `POST /solicitudes/` (trailing slash) redirects with 307 | Starlette default | Use the exact path |
 | Live acceptance of the strict tool schema and the Agent SDK path | No real call in development (D29) | The first real call (section 3) |
 | `AI_LOG.md` | Written by the candidate | — |
-| Extras: duplicate detection, Slack | Parts 1–4, CI and model comparison first | Specs 06c, 06d |
 | Measured model comparison (`make compare-models`) | Needs paid runs (D29) | Run it with Pitz's key; the table and the command exist |
 
-## 11. Documentation map
+## 12. Documentation map
 
 `DECISIONES.md` (design decisions) · `docs/MASTER.md` (requirements, decisions, gaps) ·
 `docs/superpowers/specs/` and `plans/` · `docs/superpowers/reviews/` (every review gate) ·
