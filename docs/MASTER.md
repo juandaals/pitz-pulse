@@ -107,9 +107,9 @@ pitz-pulse/
 | # | Spec | Covers | File | Plan | Status |
 |---|------|--------|------|------|--------|
 | 01 | Classification core | Part 1 | `specs/2026-09-25-01-classification-core-design.md` | pending | implemented and gate-reviewed on `feat/spec-01-classification-core`; real smoke deferred to the Pitz key (D29) |
-| 02 | Service & persistence | Part 2 | `specs/2026-09-25-02-service-persistence-design.md` | `plans/2026-09-27-02-service-persistence-plan.md` (v2, plan gate applied) | implemented on feat/spec-02-service-persistence; implementation gate next |
+| 02 | Service & persistence | Part 2 | `specs/2026-09-25-02-service-persistence-design.md` | `plans/2026-09-27-02-service-persistence-plan.md` (v2, plan gate applied) | implemented and gate-reviewed (PR #2) |
 | 03 | Evaluation, golden sets, iteration | Part 3 | `specs/2026-09-25-03-evaluation-design.md` | `plans/2026-09-27-03-evaluation-plan.md` (v2) | implemented on feat/spec-03-evaluation (rev 5); edge labels approved 2026-09-27 |
-| 04 | 04a delivery · 04b docs | Part 2 (compose) + Part 4 | `specs/2026-09-25-04-delivery-docs-design.md` | pending | draft rev 3 (D29/D30 amendments) |
+| 04 | 04a delivery · 04b docs | Part 2 (compose) + Part 4 | `specs/2026-09-25-04-delivery-docs-design.md` | `plans/2026-09-27-04-delivery-docs-plan.md` (fast mode) | implemented on feat/spec-04-delivery-docs; final review applied |
 | 05 | Review web UI (extra) | X5 | `specs/2026-09-25-05-review-web-ui-design.md` | pending | draft rev 2 |
 | 06 | Extras: CI, compare, duplicates, Slack | X1–X4 | `specs/2026-09-25-06-extras-design.md` | pending | draft rev 2 |
 
@@ -249,16 +249,16 @@ show real output → propose commit(s) → candidate approves.
 1. ~~`etiquetas_esperadas.json`~~ approved 2026-09-25 (AI-drafted, candidate-approved; disclosed in README/AI_LOG).
 2. ~~Edge-set labels~~ approved 2026-09-27 (assistant-drafted, candidate-approved; EDGE-15/16 changed by the candidate).
 3. No real key in this repo's development (D29). `resultados.json` comes from a marked mock run (D31); real runs need Pitz's `ANTHROPIC_API_KEY`.
-4. Do not merge Spec 03 to main before the Spec 04b README discloses that `resultados.json` is mock output (G21).
+4. ~~Mock `resultados.json` disclosure~~ done: README opens with it (Spec 04b). Merge PRs #1–#4 in order.
 
 ## 10. Delivery checklist (maps to the case deliverables)
 
-- [ ] Real commit history, conventional messages
-- [ ] `README.md`: compose, tests, eval, stack + why, assumptions, last eval run, prompt iteration, pending items
-- [ ] `resultados.json` + meta (promoted, real provider, active prompt version)
-- [x] `etiquetas_esperadas.json` (approved) — eval result in README pending
-- [ ] `DECISIONES.md` ≤ 2 pages, six topics
+- [x] Real commit history, conventional messages
+- [x] `README.md`: compose, tests, eval, stack + why, assumptions, last eval run (mock, G35), prompt iteration protocol, pending items
+- [x] `resultados.json` + meta (promoted from a **mock** run, `mock: true`, D31; real regeneration documented)
+- [x] `etiquetas_esperadas.json` (approved) — mock eval result in README; real one pending (G35)
+- [x] `DECISIONES.md` ≤ 2 pages, six topics
 - [ ] `AI_LOG.md` (candidate)
-- [ ] `.env.example` with no real values
-- [ ] `docker compose up` verified from a clean clone
-- [ ] `make test` and `make eval` verified; output pasted in the final phase review
+- [x] `.env.example` with no real values
+- [x] `docker compose up` verified from a clean clone (smoke OK)
+- [x] `make test` and `make eval` verified (672 passed; mock eval in README and review reports)
