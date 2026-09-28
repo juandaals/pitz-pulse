@@ -12,6 +12,7 @@ MAX_PENDING_STALE_S = 604800  # 7 days; keeps timestamp arithmetic far from over
 DEFAULT_DUPLICATE_THRESHOLD = 0.85  # single source; also DuplicateDetector's own default
 MIN_DUPLICATE_THRESHOLD = 0.5
 MAX_DUPLICATE_THRESHOLD = 1.0
+MAX_CHANNEL_AREA_CHARS = 100  # matches RequestInput.source_area's own bound (schema.py)
 
 
 @dataclass(frozen=True)
@@ -50,6 +51,11 @@ def _channel_areas(env: Mapping[str, str]) -> dict[str, str]:
         if not sep or not channel or not area:
             raise ConfigError(
                 "SLACK_CHANNEL_AREAS must look like 'C123=Comercial MX,C456=Otro area'"
+            )
+        if len(area) > MAX_CHANNEL_AREA_CHARS:
+            raise ConfigError(
+                f"SLACK_CHANNEL_AREAS area for {channel!r} must be at most "
+                f"{MAX_CHANNEL_AREA_CHARS} characters"
             )
         areas[channel] = area
     return areas

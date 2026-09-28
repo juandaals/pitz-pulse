@@ -120,3 +120,18 @@ def test_slack_channel_areas_parses_the_mapping():
 def test_slack_channel_areas_rejects_a_malformed_entry():
     with pytest.raises(ConfigError, match="SLACK_CHANNEL_AREAS"):
         parse_api_settings({**BASE, "SLACK_CHANNEL_AREAS": "C123"})
+
+
+def test_slack_channel_areas_rejects_an_empty_area():
+    with pytest.raises(ConfigError, match="SLACK_CHANNEL_AREAS"):
+        parse_api_settings({**BASE, "SLACK_CHANNEL_AREAS": "C123="})
+
+
+def test_slack_channel_areas_rejects_an_area_over_100_chars():
+    with pytest.raises(ConfigError, match="SLACK_CHANNEL_AREAS"):
+        parse_api_settings({**BASE, "SLACK_CHANNEL_AREAS": f"C123={'A' * 101}"})
+
+
+def test_slack_channel_areas_accepts_an_area_of_exactly_100_chars():
+    settings = parse_api_settings({**BASE, "SLACK_CHANNEL_AREAS": f"C123={'A' * 100}"})
+    assert settings.slack_channel_areas == {"C123": "A" * 100}
