@@ -255,11 +255,10 @@ row and reclassifies it.
 | Stuck `pending` rows after a container kill answer 409 until they go stale (~9 min) | Conservative stale window | Wait for `Retry-After`, or `docker compose down -v` in development |
 | `POST /solicitudes/` (trailing slash) redirects with 307 | Starlette default | Use the exact path |
 | Live acceptance of the strict tool schema and the Agent SDK path | No real call in development (D29) | The first real call (section 3) |
-| `AI_LOG.md` | Written by the candidate | — |
 | Measured model comparison (`make compare-models`) | Needs paid runs (D29) | Run it with Pitz's key; the table and the command exist |
 
 ## 12. Documentation map
 
 `DECISIONES.md` (design decisions) · `docs/MASTER.md` (requirements, decisions, gaps) ·
 `docs/superpowers/specs/` and `plans/` · `docs/superpowers/reviews/` (every review gate) ·
-`AI_LOG.md` (written by the candidate: how AI was used, including the conversation link).
+`AI_LOG.md` (how AI was used: drafted with the assistant from our session, reviewed and edited by the candidate).

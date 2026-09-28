@@ -2,7 +2,8 @@
 
 > Drafted by the AI assistant at my request from our working session, then reviewed and edited by
 > me. The decisions below are mine unless stated otherwise.
-> Conversation: <link to the AI conversation>
+> Conversation: Claude Code session run locally (no public share link); I can share the exported
+> transcript on request.
 
 ## How I used AI
 
@@ -33,15 +34,22 @@ something perfect and late.
 
 ## Five key moments
 
-### 1. LangGraph is the harness, not the Agent SDK
-- **Asked:** a triage classifier with structured output that could use either an API key or my
-  Claude OAuth token.
-- **Returned:** at one point the AI leaned toward letting the Claude Agent SDK drive the call.
-- **Changed:** I corrected it: LangGraph is always the harness (`call_llm → validate → retry`);
-  provider SDKs are only transports behind an adapter interface (`anthropic_api`,
-  `claude_agent_sdk`, `mock`), and structured output comes from a forced tool call.
+### 1. LangGraph as the harness, and what "tool use" means
+- **Asked:** a classifier with structured output that could later switch providers (Anthropic
+  today, maybe Kimi or OpenAI tomorrow) and also run with my Claude OAuth token.
+- **Returned:** the AI first recommended *not* using LangGraph (linear flow, extra dependencies)
+  and said "no tools". I pushed back because the case asks for structured output via tool use.
+  It clarified the two meanings of "tool": a forced tool call as the output schema (what the case
+  asks for) versus agent tools the model executes (not needed here).
+- **Changed:** I kept LangGraph as the harness (`call_llm → validate → retry`) for provider
+  portability and a graph that can grow into multi-turn clarification; provider SDKs are only
+  transports behind one adapter interface (`anthropic_api`, `claude_agent_sdk`, `mock`). The AI
+  then found that the Agent SDK cannot force a tool or set temperature 0, so I decided that only
+  `anthropic_api` at temperature 0 can produce the official `resultados.json`; the Agent SDK
+  returns plain JSON validated by the same schema and stays a development provider.
 - **Verified:** tests pin the graph flow, the adapter boundary and the exact request body sent to
-  the Messages API (temperature 0, forced tool choice, strict schema).
+  the Messages API (temperature 0, forced tool choice, strict schema); an offline spike
+  introspected the Agent SDK options (`docs/superpowers/plans/notes/`).
 
 ### 2. Labels drafted by AI, decided by me
 - **Asked:** draft the 12 expected labels for the case messages, and later an 18-message edge set
