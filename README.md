@@ -215,7 +215,7 @@ drift from the contract silently; CI fails if the generated files are stale.
 | `POST /solicitudes/` (trailing slash) redirects with 307 | Starlette default | Use the exact path |
 | Live acceptance of the strict tool schema and the Agent SDK path | No real call in development (D29) | The first real call (section 3) |
 | `AI_LOG.md` | Written by the candidate | — |
-| Extras: duplicate detection, Slack | Parts 1–4, CI and model comparison first | Specs 06c, 06d |
+| Extras: Slack Events endpoint | Parts 1–4, CI, model comparison and duplicate detection first | Spec 06d |
 | Measured model comparison (`make compare-models`) | Needs paid runs (D29) | Run it with Pitz's key; the table and the command exist |
 
 ## 11. Documentation map
