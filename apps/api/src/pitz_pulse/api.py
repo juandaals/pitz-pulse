@@ -51,6 +51,7 @@ def create_app(
         classifier,
         threshold=settings.llm.confidence_threshold,
         pending_stale_s=settings.pending_stale_s,
+        duplicate_threshold=settings.duplicate_threshold,
     )
     running_mock = classifier.adapter.provider == MOCK
     # Every waiter holds a worker thread: slots + 2x waiters + headroom for reads (Spec 02 §2).

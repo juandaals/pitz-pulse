@@ -73,6 +73,7 @@ def test_item_keys_are_the_documented_ones():
         "error",
         "created_at",
         "updated_at",
+        "possible_duplicate_of",
     }
 
 

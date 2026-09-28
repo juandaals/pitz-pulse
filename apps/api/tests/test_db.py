@@ -109,10 +109,27 @@ def test_split_statements_rejects_an_incomplete_tail(sql):
 
 def test_migrate_creates_the_schema_and_is_idempotent(tmp_path):
     conn = db.connect(tmp_path / "t.db")
-    assert db.migrate(conn) == ["001_init"]
+    assert db.migrate(conn) == ["001_init", "002_possible_duplicate"]
     assert db.migrate(conn) == []
     tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     assert {"requests", "corrections", "schema_migrations"} <= tables
+
+
+def test_migration_002_adds_possible_duplicate_of_to_an_existing_001_db(tmp_path):
+    """002 applies cleanly on top of a database that only ever ran 001 (Spec 06c)."""
+    only_001 = tmp_path / "only_001"
+    only_001.mkdir()
+    (only_001 / "001_init.sql").write_text(
+        (db.MIGRATIONS_DIR / "001_init.sql").read_text(encoding="utf-8"), encoding="utf-8"
+    )
+    conn = db.connect(tmp_path / "t.db")
+    assert db.migrate(conn, only_001) == ["001_init"]
+    _insert_classified(conn)  # data written before the 002 column exists
+
+    assert db.migrate(conn) == ["002_possible_duplicate"]  # the real, full migrations dir
+
+    row = conn.execute("SELECT possible_duplicate_of FROM requests WHERE id = 'r1'").fetchone()
+    assert row["possible_duplicate_of"] is None
 
 
 @pytest.mark.parametrize(

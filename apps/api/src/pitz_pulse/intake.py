@@ -114,7 +114,8 @@ class IntakeMixin:
             finally:
                 self._release_slot()
             attempts = len(outcome.attempts)
-            return self._complete(req.id, token, outcome)
+            duplicate_of = self._detect_duplicate(req, outcome.classification.idioma)
+            return self._complete(req.id, token, outcome, duplicate_of)
         except ClassificationError as exc:
             attempts = len(exc.attempts)
             answer = self._fail(req.id, token, exc.kind, attempts)
@@ -134,7 +135,25 @@ class IntakeMixin:
             setattr(exc, BILLED_ATTEMPTS, attempts)
             raise
 
-    def _complete(self, request_id: str, token: str, outcome: ClassifyOutcome) -> Answer:
+    def _detect_duplicate(self, req: RequestInput, idioma: str) -> str | None:
+        """Read-only, best-effort: never raises, so a check failure never fails the request."""
+        try:
+            with self.connection() as repo, repo.read_transaction():
+                candidates = repo.list_recent_classified(
+                    idioma, req.id, self.duplicate_detector.window
+                )
+            return self.duplicate_detector.find(req.message, candidates)
+        except Exception as exc:
+            log_event(logger, "duplicate_check_failed", id=req.id, exc_type=type(exc).__name__)
+            return None
+
+    def _complete(
+        self,
+        request_id: str,
+        token: str,
+        outcome: ClassifyOutcome,
+        possible_duplicate_of: str | None,
+    ) -> Answer:
         attempts = len(outcome.attempts)
         adapter = self.classifier.adapter
         for delay in (*self.complete_backoff_s, None):
@@ -148,6 +167,7 @@ class IntakeMixin:
                             adapter.provider,
                             adapter.model,
                             self._now(),
+                            possible_duplicate_of=possible_duplicate_of,
                         )
                         row = repo.get(request_id)
                 break

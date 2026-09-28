@@ -9,6 +9,9 @@ from pitz_pulse.config import ConfigError, LLMSettings, parse_llm_settings
 
 QUEUE_WAIT_S = 30.0  # longest wait for a model slot before 503 busy (Spec 02 §2)
 MAX_PENDING_STALE_S = 604800  # 7 days; keeps timestamp arithmetic far from overflow
+DEFAULT_DUPLICATE_THRESHOLD = 0.85  # single source; also DuplicateDetector's own default
+MIN_DUPLICATE_THRESHOLD = 0.5
+MAX_DUPLICATE_THRESHOLD = 1.0
 
 
 @dataclass(frozen=True)
@@ -17,6 +20,7 @@ class ApiSettings:
     api_key: str = field(repr=False)
     db_path: Path
     pending_stale_s: int
+    duplicate_threshold: float
 
 
 def stale_floor_s(llm: LLMSettings, queue_wait_s: float = QUEUE_WAIT_S) -> int:
@@ -26,6 +30,22 @@ def stale_floor_s(llm: LLMSettings, queue_wait_s: float = QUEUE_WAIT_S) -> int:
 
 def _text(env: Mapping[str, str], name: str) -> str:
     return (env.get(name) or "").strip()
+
+
+def _duplicate_threshold(env: Mapping[str, str]) -> float:
+    raw = _text(env, "DUPLICATE_THRESHOLD")
+    if not raw:
+        return DEFAULT_DUPLICATE_THRESHOLD
+    try:
+        value = float(raw)
+    except ValueError:
+        raise ConfigError("DUPLICATE_THRESHOLD must be a number") from None
+    if not (math.isfinite(value) and MIN_DUPLICATE_THRESHOLD <= value <= MAX_DUPLICATE_THRESHOLD):
+        raise ConfigError(
+            f"DUPLICATE_THRESHOLD must be between {MIN_DUPLICATE_THRESHOLD} and "
+            f"{MAX_DUPLICATE_THRESHOLD}"
+        )
+    return value
 
 
 def parse_api_settings(env: Mapping[str, str]) -> ApiSettings:
@@ -40,9 +60,10 @@ def parse_api_settings(env: Mapping[str, str]) -> ApiSettings:
     if not db_path.is_absolute():
         db_path = llm.app_root / db_path  # never the current working directory
     floor = stale_floor_s(llm)
+    duplicate_threshold = _duplicate_threshold(env)
     raw_stale = _text(env, "PENDING_STALE_SECONDS")
     if not raw_stale:
-        return ApiSettings(llm, api_key, db_path, floor)
+        return ApiSettings(llm, api_key, db_path, floor, duplicate_threshold)
     try:
         stale = int(raw_stale)
     except ValueError:
@@ -56,4 +77,4 @@ def parse_api_settings(env: Mapping[str, str]) -> ApiSettings:
         raise ConfigError(
             f"PENDING_STALE_SECONDS={stale} is above the maximum {MAX_PENDING_STALE_S} (7 days)"
         )
-    return ApiSettings(llm, api_key, db_path, stale)
+    return ApiSettings(llm, api_key, db_path, stale, duplicate_threshold)

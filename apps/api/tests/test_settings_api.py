@@ -65,3 +65,29 @@ def test_repr_never_shows_keys():
 def test_explicit_real_provider_without_its_key_fails_fast_naming_the_variable():
     with pytest.raises(ConfigError, match="ANTHROPIC_API_KEY"):
         parse_api_settings({"LLM_PROVIDER": "anthropic_api", "API_KEY": "k"})
+
+
+def test_duplicate_threshold_defaults_to_0_85():
+    assert parse_api_settings(BASE).duplicate_threshold == 0.85
+
+
+def test_duplicate_threshold_reads_a_custom_value():
+    settings = parse_api_settings({**BASE, "DUPLICATE_THRESHOLD": "0.9"})
+    assert settings.duplicate_threshold == 0.9
+
+
+@pytest.mark.parametrize("value", ["0.49", "1.01", "2"])
+def test_duplicate_threshold_out_of_range_is_a_config_error(value):
+    with pytest.raises(ConfigError, match="DUPLICATE_THRESHOLD"):
+        parse_api_settings({**BASE, "DUPLICATE_THRESHOLD": value})
+
+
+def test_duplicate_threshold_must_be_a_number():
+    with pytest.raises(ConfigError, match="DUPLICATE_THRESHOLD"):
+        parse_api_settings({**BASE, "DUPLICATE_THRESHOLD": "high"})
+
+
+@pytest.mark.parametrize("value", ["0.5", "1.0", "1"])
+def test_duplicate_threshold_accepts_the_boundary_values(value):
+    settings = parse_api_settings({**BASE, "DUPLICATE_THRESHOLD": value})
+    assert settings.duplicate_threshold == float(value)

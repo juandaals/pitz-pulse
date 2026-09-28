@@ -44,11 +44,19 @@ def pending(repo, req_id="r1", token="t1", now=T0, message="hola"):
         repo.insert_pending(RequestInput(id=req_id, message=message), "hash", token, now)
 
 
-def classified(repo, req_id="r1", now=T1, **overrides):
-    pending(repo, req_id, token=f"tok-{req_id}", now=now)
+def classified(repo, req_id="r1", now=T1, message="hola", possible_duplicate_of=None, **overrides):
+    pending(repo, req_id, token=f"tok-{req_id}", now=now, message=message)
     result = classification(req_id, **overrides)
     with repo.transaction():
-        assert repo.complete(req_id, f"tok-{req_id}", result, "fake", "fake-model", now)
+        assert repo.complete(
+            req_id,
+            f"tok-{req_id}",
+            result,
+            "fake",
+            "fake-model",
+            now,
+            possible_duplicate_of=possible_duplicate_of,
+        )
 
 
 def ids(repo, threshold=0.7, limit=20, offset=0, **filters):
@@ -80,6 +88,41 @@ def test_complete_stores_typed_values_and_original(repo):
     assert row.original_classification["requiere_info"] is True
     assert row.original_classification["id"] == "r1"
     assert row.updated_at == T1
+
+
+def test_complete_stores_possible_duplicate_of(repo):
+    classified(repo, "first", now=T0)
+    classified(repo, "second", now=T1, possible_duplicate_of="first")
+    assert repo.get("first").possible_duplicate_of is None
+    assert repo.get("second").possible_duplicate_of == "first"
+
+
+def test_complete_without_possible_duplicate_of_defaults_to_null(repo):
+    classified(repo)
+    assert repo.get("r1").possible_duplicate_of is None
+
+
+def test_list_recent_classified_filters_idioma_and_excludes_current_id(repo):
+    classified(repo, "a", now=T0, message="mensaje a", idioma="es")
+    classified(repo, "b", now=T1, message="mensaje b", idioma="es")
+    classified(repo, "c", now=T2, message="mensaje c", idioma="pt")
+    pending(repo, "d", token="d", now=T0, message="mensaje pendiente")
+
+    assert repo.list_recent_classified("es", "a", 200) == [("b", "mensaje b")]
+    assert repo.list_recent_classified("pt", "z", 200) == [("c", "mensaje c")]
+
+
+def test_list_recent_classified_orders_most_recent_first_and_respects_limit(repo):
+    classified(repo, "a", now=T0, message="mensaje a")
+    classified(repo, "b", now=T1, message="mensaje b")
+    classified(repo, "c", now=T2, message="mensaje c")
+
+    assert repo.list_recent_classified("es", "current", 200) == [
+        ("c", "mensaje c"),
+        ("b", "mensaje b"),
+        ("a", "mensaje a"),
+    ]
+    assert repo.list_recent_classified("es", "current", 1) == [("c", "mensaje c")]
 
 
 def test_complete_clears_a_previous_error(repo):

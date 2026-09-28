@@ -11,7 +11,7 @@ ITEM_KEYS = {
     "id", "message", "source_area", "status", "categoria", "prioridad", "area_sugerida",
     "idioma", "resumen", "requiere_info", "pregunta_seguimiento", "confianza",
     "version_prompt", "provider", "model", "needs_review", "corrected", "error",
-    "created_at", "updated_at",
+    "created_at", "updated_at", "possible_duplicate_of",
 }  # fmt: skip
 
 
