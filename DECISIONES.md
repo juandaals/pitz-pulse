@@ -18,6 +18,14 @@ schema-valid arguments); **a single call without a graph** (the feedback retry i
 LangGraph leaves room for multi-turn clarification); **the Agent SDK as the only path** (it cannot
 set temperature 0, which the case requires).
 
+**Verification debt (G3).** No real model call was made during development (no personal
+credentials were used, D29), so the live smoke call could not run: the provider's acceptance of
+the strict tool schema and the Agent SDK's plain-JSON reply are unverified against the real API.
+The whole flow was verified with the mock provider, and the provider contract is tested offline —
+the exact request body sent to the Messages API (temperature, forced tool choice, strict schema)
+and the parsing of a canned tool-use response. The first real call with Pitz's key closes this
+debt (README §3).
+
 ## 2. `confianza`
 
 `confianza` below `CONFIDENCE_THRESHOLD` sends a request to the review queue
