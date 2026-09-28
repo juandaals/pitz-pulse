@@ -38,7 +38,7 @@ query, correct, evaluate). Start every session by reading `docs/MASTER.md`.
 ## Commands (from repo root)
 ```
 make install  make test  make lint  make classify  make eval  make compare  make promote
-make up  make down  make smoke        (make web-types arrives with Spec 05)
+make up  make down  make smoke  make web-types
 ```
 
 ## Workflow

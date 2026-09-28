@@ -179,7 +179,32 @@ that contained an email address:
 - A request whose `confianza` is below the threshold goes to the review queue until someone PATCHes
   it (confirming counts).
 
-## 9. Pending items
+## 9. Review web UI
+
+A minimal internal page (`apps/web`: Vite · React · TypeScript) to work the low-confidence review
+queue and confirm or correct classifications — feeding the corrections table (Spec 05, extra X5).
+It is served by nginx under its own compose profile, so a web build failure never blocks the core
+`docker compose up`:
+
+```bash
+docker compose --profile web up --build
+```
+
+Open `http://localhost:${WEB_PORT:-8080}`. The page asks once for the API key (`dev-local-key`
+unless you changed it) and a reviewer name, then lists items with
+`status=classified&needs_review=true`; click one to confirm it as-is or correct any of the
+contract fields, with a reason. **The API key travels in the browser only for this local demo**
+(Spec 05 §7) — a production deployment would use SSO and derive the reviewer identity from the
+session instead of asking for a key.
+
+If port 8080 is already taken on your machine, set `WEB_PORT` before starting the service, e.g.
+`WEB_PORT=8081 docker compose --profile web up --build` (also settable in `.env`), then open
+`http://localhost:8081` instead.
+
+Types are generated from the API's own OpenAPI document (`make web-types`) so the UI can never
+drift from the contract silently; CI fails if the generated files are stale.
+
+## 10. Pending items
 
 | Item | Why | How |
 |---|---|---|
@@ -190,10 +215,10 @@ that contained an email address:
 | `POST /solicitudes/` (trailing slash) redirects with 307 | Starlette default | Use the exact path |
 | Live acceptance of the strict tool schema and the Agent SDK path | No real call in development (D29) | The first real call (section 3) |
 | `AI_LOG.md` | Written by the candidate | — |
-| Extras: review web UI, duplicate detection, Slack | Parts 1–4, CI and model comparison first | Specs 05, 06c, 06d |
+| Extras: duplicate detection, Slack | Parts 1–4, CI and model comparison first | Specs 06c, 06d |
 | Measured model comparison (`make compare-models`) | Needs paid runs (D29) | Run it with Pitz's key; the table and the command exist |
 
-## 10. Documentation map
+## 11. Documentation map
 
 `DECISIONES.md` (design decisions) · `docs/MASTER.md` (requirements, decisions, gaps) ·
 `docs/superpowers/specs/` and `plans/` · `docs/superpowers/reviews/` (every review gate) ·
