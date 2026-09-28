@@ -224,10 +224,17 @@ Slack app's "Event Subscriptions" page: `https://<your-host>/slack/events`, subs
 `message.channels` bot event.
 
 The event id becomes the request id (`slack-<event_id>`), so Slack's own retries of the same
-event are idempotent no-ops (no second reply); bot messages, edits (any `subtype`) and thread
-replies are ignored. Classification runs in a FastAPI `BackgroundTasks` job in the same process
-(a thread pool, `anyio.to_thread`) — a restart loses whatever was in flight; `DECISIONES.md` §5
-records the durable-queue design for production.
+event are idempotent no-ops (no second reply); bot messages, edits and attachments (any
+`subtype`, including a shared file's `file_share`) and thread replies are ignored. Classification
+runs in a FastAPI `BackgroundTasks` job in the same process (a thread pool, `anyio.to_thread`) —
+a restart loses whatever was in flight; `DECISIONES.md` §5 records the durable-queue design for
+production.
+
+The route acks Slack with `200` before classification runs, so Slack's own redelivery (it resends
+an event when it never gets a timely ack) only ever fires for an ack failure — a request that
+fails classification in the background stays `failed` and is not retried by Slack. Recovery is
+manual: re-`POST` the same id and message to `/solicitudes` directly, which reclaims the `failed`
+row and reclassifies it.
 
 ## 11. Pending items
 

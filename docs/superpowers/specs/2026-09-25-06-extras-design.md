@@ -56,11 +56,16 @@ similarity ("third case like this this month") needs embeddings — listed as th
 ```
 TriageService.create ─► classify ok ─► before complete() (read-only, no write lock held):
    candidates = last N=200 classified rows, same idioma, id != current
-   normalized = lowercase, strip accents/punctuation, collapse spaces, truncate 1000 chars
+   normalized = lowercase, strip accents/punctuation, collapse spaces, truncate 300 chars
    len(normalized) < 30 ─► skip (short-message guard)
-   SequenceMatcher(autojunk=False): real_quick_ratio ─► quick_ratio ─► ratio ≥ DUPLICATE_THRESHOLD
-   ─► possible_duplicate_of = best id (else null), written by complete() in its transaction
+   SequenceMatcher(autojunk=False): real_quick_ratio ─► Jaccard(word sets) ≥ 0.5 ─► quick_ratio
+   ─► ratio ≥ DUPLICATE_THRESHOLD ─► possible_duplicate_of = best id (else null), written by
+   complete() in its transaction
 ```
+- The 300-char truncation (down from an original 1000) and the token-set Jaccard prefilter
+  (skip a candidate below 0.5 word-set overlap before paying for `quick_ratio`) bound the cost
+  of a full candidate window (200) of long, same-length, same-language texts, the worst case for
+  the length-based `real_quick_ratio` filter alone.
 - `migrations/002_possible_duplicate.sql` adds the column. stdlib only.
 - `possible_duplicate_of` exists on the API Item only — never on `Classification` or run files;
   web types regenerated in the same change.
@@ -72,7 +77,8 @@ DuplicateDetector(window, threshold, min_len)
 ```
 State: `classified → checked → flagged | unique`.
 Tests: identical → flagged; small edit → flagged; different wording → not flagged; short-message
-guard; window bound; never flags itself; quick-ratio prefilter does not change results.
+guard; window bound; never flags itself; quick-ratio prefilter does not change results; a full
+200-candidate window of long, similar-vocabulary same-language text stays under budget.
 
 ---
 
@@ -115,13 +121,13 @@ Reply template: categoria · prioridad · area_sugerida · resumen; `pregunta_se
 
 ```
 SlackVerifier  + verify(headers, raw_body, now) -> None      raises InvalidSignature
-SlackNotifier  + reply(channel, thread_ts, text) -> None       httpx + SLACK_BOT_TOKEN
+SlackNotifier  + reply(channel, thread_ts, text) -> None       httpx2 + SLACK_BOT_TOKEN
 slack_routes.py  route, filter, background wiring
 ```
 State: `received → verified → acked → classifying → replied | ignored | failed(logged)`.
-Dependencies: `httpx` becomes runtime (already a dev dep) — no `slack_sdk`. Bot scopes:
-`channels:history`, `chat:write`. `SLACK_CHANNEL_AREAS` optional (`C123=Comercial MX,…`); unknown
-channel → `source_area = null`.
+Dependencies: `httpx2` becomes runtime (already a transitive dep of `anthropic`) — no `slack_sdk`.
+Bot scopes: `channels:history`, `chat:write`. `SLACK_CHANNEL_AREAS` optional
+(`C123=Comercial MX,…`); unknown channel → `source_area = null`.
 Production caveat: `BackgroundTasks` dies with the process; production uses the durable enqueue in
 DECISIONES §5.
 Tests: valid / invalid / expired / missing-timestamp signatures; challenge; bot message, edit and
