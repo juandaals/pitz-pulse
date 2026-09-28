@@ -153,9 +153,10 @@ def to_markdown(rows: list[Row]) -> str:
             "| " + " | ".join("---" for _ in _COLUMNS) + " |",
         ]
         lines += ["| " + " | ".join(_row_cells(row)) + " |" for row in set_rows]
+        counts = ", ".join(f"{row.model} {row.scored}" for row in set_rows)
         lines += [
             "",
-            f"N = {set_rows[0].scored} per set; differences within the noise floor of two "
+            f"N = {counts} per set; differences within the noise floor of two "
             "identical runs (`make compare`) are not meaningful.",
             "",
         ]

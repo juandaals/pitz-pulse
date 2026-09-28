@@ -1,7 +1,8 @@
 import hashlib
+import json
 from pathlib import Path
 
-from evaluate_support import build_fixture
+from evaluate_support import CASE_LABELS, build_fixture
 
 from pitz_pulse.model_compare import MOCK_HEADER, Row, build_row, main, to_markdown
 
@@ -96,6 +97,32 @@ def test_separate_tables_per_set(tmp_path):
     assert "## case set" in markdown
     assert "## edge set" in markdown
     assert markdown.index("## case set") < markdown.index("## edge set")
+
+
+def test_note_shows_each_rows_own_scored_count_not_just_the_firsts(tmp_path):
+    """Two rows in the same set with a different number of approved labels: the note must show
+    each row's own `scored` count, not silently repeat the first row's for every model.
+    """
+    app_root_a, stem_a = build_fixture(
+        tmp_path / "a", set_name="case", stem="case__v1__mock__mock", meta_overrides={**TOKEN_META}
+    )
+    app_root_b, stem_b = build_fixture(
+        tmp_path / "b",
+        set_name="case",
+        stem="case__v1__anthropic_api__claude-haiku-4-5",
+        meta_overrides={"provider": "anthropic_api", "model": "claude-haiku-4-5", **TOKEN_META},
+        labels_text=json.dumps(CASE_LABELS[:1]),
+    )
+    row_a = build_row(app_root_a, stem_a, threshold=0.7)
+    row_b = build_row(app_root_b, stem_b, threshold=0.7)
+    assert row_a.scored == 2
+    assert row_b.scored == 1
+
+    markdown = to_markdown([row_a, row_b])
+
+    note_line = next(line for line in markdown.splitlines() if line.startswith("N = "))
+    assert "mock 2" in note_line
+    assert "claude-haiku-4-5 1" in note_line
 
 
 def test_cli_integrity_failure_exits_two_naming_the_stem(tmp_path, capsys):
