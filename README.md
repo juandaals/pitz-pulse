@@ -138,7 +138,12 @@ case set without regressing the edge set, then promote.
 claude-sonnet-5" LLM_PROVIDER=anthropic_api CONFIRM=1` classifies both golden sets with each model
 (`SUFFIX=cmp`) and prints one cost-vs-quality table per set (`python -m pitz_pulse.model_compare`),
 built only from files already in `eval/runs/`; it never touches `/resultados.json` and none of these
-runs are ever promoted. `LLM_PROVIDER=mock` needs no confirmation; any other provider bills **2
+runs are ever promoted. Before the first classify call, a preflight step
+(`python -m pitz_pulse.preflight`) validates every (provider, model, temperature) combination with
+a dummy credential, so a typo'd model name fails fast (exit 2, naming the bad model) instead of
+after paying for the first, valid one. `LLM_PROVIDER=mock` needs no confirmation, but accepts only
+**a single MODELS entry**: the mock adapter ignores `LLM_MODEL` and always writes `model=mock`, so
+a second model would silently collide with the first one's run files. Any other provider bills **2
 runs per model** (12 + 18 messages, retries can add calls) and refuses to start without `CONFIRM=1`.
 No paid run was made while building this project (D29), so the table has never been filled with
 real numbers — the tooling and this documentation are the deliverable. Routing "simple" categories
