@@ -35,6 +35,7 @@ function makeItem(id: string): Item {
     error: null,
     created_at: "now",
     updated_at: "now",
+    possible_duplicate_of: null,
   };
 }
 

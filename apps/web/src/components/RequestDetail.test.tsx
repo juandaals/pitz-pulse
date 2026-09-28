@@ -33,6 +33,7 @@ const correctedDetail: ItemDetail = {
   error: null,
   created_at: "2026-09-27T10:00:00Z",
   updated_at: "2026-09-27T11:00:00Z",
+  possible_duplicate_of: null,
   original_classification: {
     categoria: "consulta",
     prioridad: "baja",
@@ -74,6 +75,7 @@ const failedDetail: ItemDetail = {
   error: "classification_failed: llm_rejected",
   created_at: "2026-09-27T10:00:00Z",
   updated_at: "2026-09-27T10:00:05Z",
+  possible_duplicate_of: null,
   original_classification: null,
   corrections: [],
 };
@@ -103,6 +105,44 @@ describe("RequestDetail", () => {
     expect(within(table).getByText("resumen actual")).toBeInTheDocument();
     expect(within(table).getByText("resumen original")).toBeInTheDocument();
     expect(screen.getByText(/categoria: consulta → bug/)).toBeInTheDocument();
+  });
+
+  it("shows the possible-duplicate line when the request has a flagged match", async () => {
+    const flagged: ItemDetail = { ...correctedDetail, possible_duplicate_of: "REQ-0" };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(200, flagged)));
+
+    render(
+      <RequestDetail
+        apiKey="key"
+        author="ana"
+        requestId="REQ-1"
+        onBack={vi.fn()}
+        onSaved={vi.fn()}
+        onConflict={vi.fn()}
+        onUnauthorized={vi.fn()}
+      />,
+    );
+
+    await screen.findByText(/possible duplicate of REQ-0/);
+  });
+
+  it("shows no possible-duplicate line when the request has no flagged match", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(200, correctedDetail)));
+
+    render(
+      <RequestDetail
+        apiKey="key"
+        author="ana"
+        requestId="REQ-1"
+        onBack={vi.fn()}
+        onSaved={vi.fn()}
+        onConflict={vi.fn()}
+        onUnauthorized={vi.fn()}
+      />,
+    );
+
+    await screen.findByRole("table");
+    expect(screen.queryByText(/possible duplicate of/)).not.toBeInTheDocument();
   });
 
   it("lists the changed fields for a correction without a reason, instead of confirmed", async () => {

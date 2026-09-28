@@ -152,6 +152,8 @@ export interface components {
             created_at: string;
             /** Updated At */
             updated_at: string;
+            /** Possible Duplicate Of */
+            possible_duplicate_of: string | null;
         };
         /** ItemDetail */
         ItemDetail: {
@@ -194,6 +196,8 @@ export interface components {
             created_at: string;
             /** Updated At */
             updated_at: string;
+            /** Possible Duplicate Of */
+            possible_duplicate_of: string | null;
             /** Original Classification */
             original_classification: {
                 [key: string]: unknown;

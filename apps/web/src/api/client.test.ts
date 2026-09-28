@@ -68,6 +68,7 @@ describe("client — requests", () => {
       error: null,
       created_at: "now",
       updated_at: "now",
+      possible_duplicate_of: null,
       original_classification: null,
       corrections: [],
     };
@@ -104,6 +105,7 @@ describe("client — requests", () => {
       error: null,
       created_at: "now",
       updated_at: "now",
+      possible_duplicate_of: null,
     };
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, item));
     vi.stubGlobal("fetch", fetchMock);
