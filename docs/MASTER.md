@@ -258,7 +258,7 @@ show real output → propose commit(s) → candidate approves.
 - [x] `resultados.json` + meta (promoted from a **mock** run, `mock: true`, D31; real regeneration documented)
 - [x] `etiquetas_esperadas.json` (approved) — mock eval result in README; real one pending (G35)
 - [x] `DECISIONES.md` ≤ 2 pages, six topics
-- [ ] `AI_LOG.md` (candidate)
+- [x] `AI_LOG.md` (AI-drafted at the candidate's request; candidate reviews and edits)
 - [x] `.env.example` with no real values
 - [x] `docker compose up` verified from a clean clone (smoke OK)
 - [x] `make test` and `make eval` verified (672 passed; mock eval in README and review reports)
