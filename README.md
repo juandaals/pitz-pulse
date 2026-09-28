@@ -63,11 +63,20 @@ never contain it.
 
 ## 3. Run with a real model (Pitz's key)
 
+Two variables switch the service from mock to the real model:
+
 ```bash
 cp .env.example .env
-# edit .env: ANTHROPIC_API_KEY=<Pitz key>   (LLM_PROVIDER=anthropic_api is already set)
-docker compose up --build        # the API now classifies with claude-haiku-4-5 at temperature 0
+# in .env:
+#   LLM_PROVIDER=anthropic_api        (already set in .env.example)
+#   ANTHROPIC_API_KEY=<Pitz key>
+docker compose up --build            # API classifies with claude-haiku-4-5 at temperature 0
+curl -s localhost:8000/health        # shows "provider":"anthropic_api"
 ```
+
+For the batch and the official `resultados.json` with the same `.env`:
+`make classify SET=case && make eval RUN=case__v1__anthropic_api__claude-haiku-4-5 && make promote RUN=case__v1__anthropic_api__claude-haiku-4-5`
+(section 5 explains each step).
 
 **First real call.** The strict tool schema and the full request shape have only been verified
 offline (no real call was made). The first real request — a single POST, or `make classify
